@@ -25,9 +25,9 @@ import { useConfigStore } from '@/stores/useConfigStore';
 import { useMessageStore } from '@/stores/messageStore';
 import { useContextStore } from '@/stores/contextStore';
 import { opencodeClient } from '@/lib/opencode/client';
-import { createWorktreeSessionForBranch } from '@/lib/worktreeSessionCreator';
-import { createBranch } from '@/lib/gitApi';
-import type { GitHubIssue, GitHubIssueComment, GitHubIssuesListResult } from '@/lib/api/types';
+import { createWorktreeSessionForNewBranch } from '@/lib/worktreeSessionCreator';
+import { generateBranchSlug } from '@/lib/git/branchNameGenerator';
+import type { GitHubIssue, GitHubIssueComment, GitHubIssuesListResult, GitHubIssueSummary } from '@/lib/api/types';
 
 const parseIssueNumber = (value: string): number | null => {
   const trimmed = value.trim();
@@ -46,15 +46,6 @@ const parseIssueNumber = (value: string): number | null => {
   }
 
   return null;
-};
-
-const sanitizeSlug = (value: string): string => {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, '-')
-    .replace(/^[-_]+|[-_]+$/g, '')
-    .slice(0, 80);
 };
 
 const buildIssueContextText = (args: {
@@ -86,8 +77,12 @@ export function GitHubIssuePickerDialog({
   const [query, setQuery] = React.useState('');
   const [createInWorktree, setCreateInWorktree] = React.useState(false);
   const [result, setResult] = React.useState<GitHubIssuesListResult | null>(null);
+  const [issues, setIssues] = React.useState<GitHubIssueSummary[]>([]);
+  const [page, setPage] = React.useState(1);
+  const [hasMore, setHasMore] = React.useState(false);
   const [startingIssueNumber, setStartingIssueNumber] = React.useState<number | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
+  const [isLoadingMore, setIsLoadingMore] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
   const refresh = React.useCallback(async () => {
@@ -105,8 +100,11 @@ export function GitHubIssuePickerDialog({
     setIsLoading(true);
     setError(null);
     try {
-      const next = await github.issuesList(projectDirectory);
+      const next = await github.issuesList(projectDirectory, { page: 1 });
       setResult(next);
+      setIssues(next.issues ?? []);
+      setPage(next.page ?? 1);
+      setHasMore(Boolean(next.hasMore));
       if (next.connected === false) {
         setError(null);
       }
@@ -117,6 +115,28 @@ export function GitHubIssuePickerDialog({
     }
   }, [github, projectDirectory]);
 
+  const loadMore = React.useCallback(async () => {
+    if (!projectDirectory) return;
+    if (!github?.issuesList) return;
+    if (isLoadingMore || isLoading) return;
+    if (!hasMore) return;
+
+    setIsLoadingMore(true);
+    try {
+      const nextPage = page + 1;
+      const next = await github.issuesList(projectDirectory, { page: nextPage });
+      setResult(next);
+      setIssues((prev) => [...prev, ...(next.issues ?? [])]);
+      setPage(next.page ?? nextPage);
+      setHasMore(Boolean(next.hasMore));
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast.error('Failed to load more issues', { description: message });
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [github, hasMore, isLoading, isLoadingMore, page, projectDirectory]);
+
   React.useEffect(() => {
     if (!open) {
       setQuery('');
@@ -124,13 +144,15 @@ export function GitHubIssuePickerDialog({
       setStartingIssueNumber(null);
       setError(null);
       setResult(null);
+      setIssues([]);
+      setPage(1);
+      setHasMore(false);
       setIsLoading(false);
       return;
     }
     void refresh();
   }, [open, refresh]);
 
-  const issues = React.useMemo(() => result?.issues ?? [], [result?.issues]);
   const connected = Boolean(result?.connected);
   const repoUrl = result?.repo?.url ?? null;
 
@@ -207,29 +229,6 @@ export function GitHubIssuePickerDialog({
     return settingsDefaultVariant;
   }, []);
 
-  const buildUniqueIssueBranchName = React.useCallback(
-    async (issue: GitHubIssue) => {
-      const titleSlug = sanitizeSlug(issue.title);
-      const base = titleSlug ? `issue-${issue.number}-${titleSlug}` : `issue-${issue.number}`;
-      const startPoint = baseBranch && baseBranch !== 'HEAD' ? baseBranch : undefined;
-
-      for (let attempt = 0; attempt < 6; attempt += 1) {
-        const candidate = attempt === 0 ? base : `${base}-${attempt + 1}`;
-        try {
-          const created = await createBranch(projectDirectory || '', candidate, startPoint);
-          if (created?.success) {
-            return candidate;
-          }
-        } catch {
-          // try next
-        }
-      }
-
-      throw new Error('Failed to create issue branch');
-    },
-    [baseBranch, projectDirectory]
-  );
-
   const startSession = React.useCallback(async (issueNumber: number) => {
     if (!projectDirectory) {
       toast.error('No active project');
@@ -270,8 +269,12 @@ export function GitHubIssuePickerDialog({
 
       const sessionId = await (async () => {
         if (createInWorktree) {
-          const branchName = await buildUniqueIssueBranchName(issue);
-          const created = await createWorktreeSessionForBranch(projectDirectory, branchName);
+          const preferred = `issue-${issue.number}-${generateBranchSlug()}`;
+          const created = await createWorktreeSessionForNewBranch(
+            projectDirectory,
+            preferred,
+            baseBranch || 'main'
+          );
           if (!created?.id) {
             throw new Error('Failed to create worktree session');
           }
@@ -350,8 +353,42 @@ export function GitHubIssuePickerDialog({
         }
       }
 
-      const promptText =
-        'Review this GitHub issue. Summarize requirements + unknowns, ask clarifying questions, gather any needed code context, then propose a plan and next actions. Do not implement until I confirm.';
+      const visiblePromptText = 'Review this issue using the provided issue context: title, body, labels, assignees, comments, metadata.';
+      const instructionsText = `Review this issue using the provided issue context.
+
+Process:
+- First classify the issue type (bug / feature request / question/support / refactor / ops) and state it as: Type: <one label>.
+- Gather any needed repository context (code, config, docs) to validate assumptions.
+- After gathering, if anything is still unclear or cannot be verified, do not speculate—state what’s missing and ask targeted questions.
+
+Output rules:
+- Compact output; pick ONE template below and omit the others.
+- No emojis. No code snippets. No fenced blocks.
+- Short inline code identifiers allowed.
+- Reference evidence with file paths and line ranges when applicable; if exact lines aren’t available, cite the file and say “approx” + why.
+- Keep the entire response under ~300 words.
+
+Templates (choose one):
+Bug:
+- Summary (1-2 sentences)
+- Likely cause (max 2)
+- Repro/diagnostics needed (max 3)
+- Fix approach (max 4 steps)
+- Verification (max 3)
+
+Feature:
+- Summary (1-2 sentences)
+- Requirements (max 4)
+- Unknowns/questions (max 4)
+- Proposed plan (max 5 steps)
+- Verification (max 3)
+
+Question/Support:
+- Summary (1-2 sentences)
+- Answer/guidance (max 6 lines)
+- Missing info (max 4)
+
+Do not implement changes until I confirm; end with: “Next actions: <1 sentence>”.`;
       const contextText = buildIssueContextText({ repo: issueRes.repo, issue, comments });
 
       void opencodeClient.sendMessage({
@@ -360,8 +397,11 @@ export function GitHubIssuePickerDialog({
         modelID,
         agent: agentName,
         variant,
-        text: promptText,
-        additionalParts: [{ text: contextText, synthetic: true }],
+        text: visiblePromptText,
+        additionalParts: [
+          { text: instructionsText, synthetic: true },
+          { text: contextText, synthetic: true },
+        ],
       }).catch((e) => {
         const message = e instanceof Error ? e.message : String(e);
         toast.error('Failed to send issue context', {
@@ -376,17 +416,7 @@ export function GitHubIssuePickerDialog({
     } finally {
       setStartingIssueNumber(null);
     }
-  }, [
-    buildUniqueIssueBranchName,
-    createInWorktree,
-    github,
-    onOpenChange,
-    projectDirectory,
-    resolveDefaultAgentName,
-    resolveDefaultModelSelection,
-    resolveDefaultVariant,
-    startingIssueNumber,
-  ]);
+  }, [createInWorktree, github, onOpenChange, projectDirectory, baseBranch, resolveDefaultAgentName, resolveDefaultModelSelection, resolveDefaultVariant, startingIssueNumber]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -493,6 +523,29 @@ export function GitHubIssuePickerDialog({
               </div>
             </div>
           ))}
+
+          {hasMore && connected && projectDirectory && github ? (
+            <div className="py-2 flex justify-center">
+              <button
+                type="button"
+                onClick={() => void loadMore()}
+                disabled={isLoadingMore || Boolean(startingIssueNumber)}
+                className={cn(
+                  'typography-meta text-muted-foreground hover:text-foreground transition-colors underline underline-offset-4',
+                  (isLoadingMore || Boolean(startingIssueNumber)) && 'opacity-50 cursor-not-allowed hover:text-muted-foreground'
+                )}
+              >
+                {isLoadingMore ? (
+                  <span className="inline-flex items-center gap-2">
+                    <RiLoader4Line className="h-4 w-4 animate-spin" />
+                    Loading...
+                  </span>
+                ) : (
+                  'Load more'
+                )}
+              </button>
+            </div>
+          ) : null}
         </div>
 
         <div className="mt-4 p-3 bg-muted/30 rounded-lg">
