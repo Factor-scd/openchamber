@@ -30,18 +30,13 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ open, onOpenChan
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay
           className="fixed inset-0 z-50 bg-black/50 backdrop-blur-md"
-          onPointerDown={(event) => {
-            event.stopPropagation();
-            if (hasOpenFloatingMenu()) {
-              return;
-            }
-            onOpenChange(false);
-          }}
         />
         <DialogPrimitive.Content
           aria-describedby={descriptionId}
-          onPointerDownOutside={(event) => {
-            event.preventDefault();
+          onInteractOutside={(event) => {
+            if (hasOpenFloatingMenu()) {
+              event.preventDefault();
+            }
           }}
           className={cn(
             'fixed z-50 top-[50%] left-[50%] translate-x-[-50%] translate-y-[-50%]',
