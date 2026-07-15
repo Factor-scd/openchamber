@@ -213,6 +213,9 @@ const callAnthropic = async ({ apiKey, modelID, prompt, system, maxOutputTokens 
 
 const callGoogle = async ({ apiKey, modelID, prompt, system, maxOutputTokens }) => {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelID)}:generateContent`;
+  const thinkingConfig = modelID.toLowerCase().startsWith('gemini-3')
+    ? { thinkingLevel: modelID.toLowerCase().includes('flash') ? 'minimal' : 'low' }
+    : { thinkingBudget: 0 };
   const response = await fetch(url, {
     method: 'POST',
     headers: {
@@ -223,9 +226,7 @@ const callGoogle = async ({ apiKey, modelID, prompt, system, maxOutputTokens }) 
     body: JSON.stringify({
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
-      // thinkingBudget 0 switches Gemini Flash thinking off; Flash is the only
-      // family the small-model resolver picks for Google.
-      generationConfig: { maxOutputTokens, thinkingConfig: { thinkingBudget: 0 } },
+      generationConfig: { maxOutputTokens, thinkingConfig },
     }),
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });

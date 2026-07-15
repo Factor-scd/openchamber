@@ -336,3 +336,59 @@ describe('callSmallModel — custom provider config', () => {
     });
   });
 });
+
+describe('callSmallModel — Google thinking configuration', () => {
+  let fetchMock;
+  let originalFetch;
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    originalFetch = globalThis.fetch;
+    globalThis.fetch = fetchMock;
+    readConfig.mockReset();
+    readConfig.mockReturnValue({});
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const googleResponse = (text) => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ candidates: [{ content: { parts: [{ text }] } }] }),
+  });
+
+  it('uses thinkingLevel for Gemini 3 Flash models', async () => {
+    fetchMock.mockResolvedValue(googleResponse('generated commit'));
+
+    const text = await callSmallModel({
+      auth: { google: { type: 'api', key: 'google-key' } },
+      catalog: {},
+      workingDirectory: '/proj',
+      providerID: 'google',
+      modelID: 'gemini-3.1-flash-lite-preview',
+      prompt: 'generate',
+    });
+
+    expect(text).toBe('generated commit');
+    const body = JSON.parse(lastCall(fetchMock).init.body);
+    expect(body.generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'minimal' });
+  });
+
+  it('keeps thinkingBudget disabled for Gemini 2.5 Flash models', async () => {
+    fetchMock.mockResolvedValue(googleResponse('generated commit'));
+
+    await callSmallModel({
+      auth: { google: { type: 'api', key: 'google-key' } },
+      catalog: {},
+      workingDirectory: '/proj',
+      providerID: 'google',
+      modelID: 'gemini-2.5-flash-lite',
+      prompt: 'generate',
+    });
+
+    const body = JSON.parse(lastCall(fetchMock).init.body);
+    expect(body.generationConfig.thinkingConfig).toEqual({ thinkingBudget: 0 });
+  });
+});
