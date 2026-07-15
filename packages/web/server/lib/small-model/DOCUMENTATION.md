@@ -49,7 +49,12 @@ other runtime API.
   - Everything else: OpenAI-compatible `/chat/completions` against the
     provider's base URL, resolved from (1) `provider.<id>.options.baseURL`
     in the OpenCode config, (2) the hardcoded `https://api.openai.com/v1`
-    endpoint, or (3) the provider's `api` field from the models.dev catalog.
+     endpoint, or (3) the provider's `api` field from the models.dev catalog.
+  - `[small-model:diagnostic]` logs record provider/model, input character
+    counts, output budget, thinking toggle, HTTP/finish status, and
+    content/reasoning lengths without logging prompts, response text, or
+    credentials. Goal audit parsing similarly emits
+    `[session-goal:diagnostic]` structural verdict metadata.
 - `catalog.js` — models.dev catalog via the shared in-process cache
   (`../opencode/models-metadata.js`, also serving
   `/api/openchamber/models-metadata`).

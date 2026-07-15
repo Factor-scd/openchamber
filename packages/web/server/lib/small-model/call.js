@@ -104,6 +104,15 @@ const ensureFreshOpenaiOauth = async (entry) => {
 
 const callOpenaiCompatible = async ({ baseURL, headers, modelID, prompt, system, maxOutputTokens, providerLabel, extraBody }) => {
   const trimmedBase = baseURL.replace(/\/+$/, '');
+  console.log('[small-model:diagnostic] request', {
+    provider: providerLabel,
+    model: modelID,
+    maxOutputTokens,
+    thinkingDisabled: extraBody?.thinking?.type === 'disabled',
+    promptChars: prompt.length,
+    systemChars: system?.length ?? 0,
+    inputChars: prompt.length + (system?.length ?? 0),
+  });
   const response = await fetch(`${trimmedBase}/chat/completions`, {
     method: 'POST',
     headers: {
@@ -123,11 +132,29 @@ const callOpenaiCompatible = async ({ baseURL, headers, modelID, prompt, system,
     }),
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
+  console.log('[small-model:diagnostic] response', {
+    provider: providerLabel,
+    model: modelID,
+    httpStatus: response.status,
+    ok: response.ok,
+  });
   if (!response.ok) {
     throw await httpError(response, providerLabel);
   }
   const payload = await response.json();
   const message = payload?.choices?.[0]?.message;
+  console.log('[small-model:diagnostic] completion', {
+    provider: providerLabel,
+    model: modelID,
+    finishReason: payload?.choices?.[0]?.finish_reason ?? null,
+    contentType: Array.isArray(message?.content) ? 'parts' : typeof message?.content,
+    contentChars: typeof message?.content === 'string'
+      ? message.content.length
+      : Array.isArray(message?.content)
+        ? message.content.reduce((total, part) => total + (typeof part?.text === 'string' ? part.text.length : 0), 0)
+        : 0,
+    reasoningChars: typeof message?.reasoning_content === 'string' ? message.reasoning_content.length : 0,
+  });
 
   // Providers disagree on the content shape: plain string, an array of
   // typed parts, or (thinking models) an empty content with the budget spent

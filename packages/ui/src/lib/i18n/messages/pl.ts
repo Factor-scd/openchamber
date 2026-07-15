@@ -2104,6 +2104,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.goal.dialog.objectiveLabel': 'Cel',
   'chat.goal.dialog.objectivePlaceholder': 'Opisz stan końcowy, który agent ma osiągnąć i zweryfikować…',
   'chat.goal.dialog.budgetLabel': 'Budżet tokenów',
+  'chat.goal.dialog.evaluationModelLabel': 'Model oceniający',
   'chat.goal.status.active': 'Aktywny',
   'chat.goal.status.evaluating': 'Ocenianie…',
   'chat.goal.status.paused': 'Wstrzymany',
