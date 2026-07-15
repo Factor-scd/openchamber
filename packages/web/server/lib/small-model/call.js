@@ -1,5 +1,8 @@
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { readAuthFile, writeAuthFile } from '../opencode/auth.js';
-import { readConfig } from '../opencode/shared.js';
+import { readConfig, readConfigLayers } from '../opencode/shared.js';
 import { getCatalogProvider } from './catalog.js';
 import { getAuthEntryForProvider } from './resolve.js';
 
@@ -312,13 +315,48 @@ const callCodexResponses = async ({ accessToken, accountId, modelID, prompt, sys
 // Custom provider configuration support
 // ---------------------------------------------------------------------------
 
+const resolveConfigApiKey = (value, workingDirectory, providerID) => {
+  const envMatch = value.match(/^\{env:([^}]+)\}$/i);
+  if (envMatch) {
+    return process.env[envMatch[1].trim()]?.trim() || null;
+  }
+
+  const fileMatch = value.match(/^\{file:(.+)\}$/i);
+  if (!fileMatch) return value;
+
+  const configuredPath = fileMatch[1].trim();
+  let resolvedPath;
+  if (configuredPath === '~' || configuredPath.startsWith('~/') || configuredPath.startsWith('~\\')) {
+    resolvedPath = path.join(os.homedir(), configuredPath.slice(2));
+  } else if (path.isAbsolute(configuredPath)) {
+    resolvedPath = configuredPath;
+  } else {
+    const layers = readConfigLayers(workingDirectory);
+    const source = [
+      { config: layers.customConfig, filePath: layers.paths.customPath },
+      { config: layers.projectConfig, filePath: layers.paths.projectPath },
+      { config: layers.userConfig, filePath: layers.paths.userPath },
+    ].find(({ config }) => config?.provider?.[providerID]?.options?.apiKey === value);
+    resolvedPath = path.resolve(source?.filePath ? path.dirname(source.filePath) : workingDirectory || process.cwd(), configuredPath);
+  }
+
+  try {
+    const key = fs.readFileSync(resolvedPath, 'utf8').trim();
+    if (!key) throw new Error('empty file');
+    return key;
+  } catch {
+    throw new Error(`Failed to resolve configured apiKey file for provider "${providerID}"`);
+  }
+};
+
 const readProviderConfig = (workingDirectory, providerID) => {
   try {
     const config = readConfig(workingDirectory);
     const providerCfg = config?.provider?.[providerID];
     if (!providerCfg || typeof providerCfg !== 'object') return null;
     const baseURL = typeof providerCfg?.options?.baseURL === 'string' ? providerCfg.options.baseURL.trim() : null;
-    const apiKey = typeof providerCfg?.options?.apiKey === 'string' ? providerCfg.options.apiKey.trim() : null;
+    const rawApiKey = typeof providerCfg?.options?.apiKey === 'string' ? providerCfg.options.apiKey.trim() : null;
+    const apiKey = rawApiKey ? resolveConfigApiKey(rawApiKey, workingDirectory, providerID) : null;
     return {
       baseURL,
       // Shape the config-supplied key as a regular api-key auth entry so it

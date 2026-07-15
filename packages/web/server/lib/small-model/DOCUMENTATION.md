@@ -51,6 +51,8 @@ other runtime API.
     provider's base URL, resolved from (1) `provider.<id>.options.baseURL`
     in the OpenCode config, (2) the hardcoded `https://api.openai.com/v1`
      endpoint, or (3) the provider's `api` field from the models.dev catalog.
+    Configured API keys honor OpenCode's `{env:NAME}` and `{file:path}`
+    substitutions; file contents and resolved credentials remain server-side.
   - `[small-model:diagnostic]` logs record provider/model, input character
     counts, output budget, thinking toggle, HTTP/finish status, and
     content/reasoning lengths without logging prompts, response text, or
