@@ -5,7 +5,14 @@ import { registerRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { startModelPrefsAutoSave } from '@/lib/modelPrefsAutoSave';
 import { startAppearanceAutoSave } from '@/lib/appearanceAutoSave';
 import { useUIStore } from '@/stores/useUIStore';
-import { applyPersistedHomeDirectoryToWindow, invalidateSettingsCache, syncDesktopSettings, updateDesktopSettings } from './persistence';
+import {
+  applyPersistedHomeDirectoryToWindow,
+  getSettingsSaveState,
+  invalidateSettingsCache,
+  subscribeToSettingsSaveState,
+  syncDesktopSettings,
+  updateDesktopSettings,
+} from './persistence';
 import { switchRuntimeEndpoint } from './runtime-switch';
 
 type TestWindow = {
@@ -214,6 +221,22 @@ describe('updateDesktopSettings', () => {
     expect(saveCalls).toEqual([{ themeVariant: 'dark', fontSize: 14 }]);
     expect(firstResolved).toBe(true);
     expect(secondResolved).toBe(true);
+  });
+
+  test('publishes saving and saved states for an immediate setting update', async () => {
+    const states: string[] = [];
+    registerSettingsSave(async (changes) => changes as SettingsPayload);
+    const unsubscribe = subscribeToSettingsSaveState(() => {
+      states.push(getSettingsSaveState());
+    });
+
+    try {
+      await updateDesktopSettings({ useSystemTheme: false, themeVariant: 'light' });
+      // Success is silent: the shared state machine maps 'saved' back to 'idle'.
+      expect(states).toEqual(['saving', 'idle']);
+    } finally {
+      unsubscribe();
+    }
   });
 
   test('drains a pending save to the previous runtime and ignores its stale response', async () => {

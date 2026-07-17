@@ -142,6 +142,51 @@ const dispatchSettingsSynced = (settings: DesktopSettings): void => {
   window.dispatchEvent(new CustomEvent<DesktopSettings>('openchamber:settings-synced', { detail: settings }));
 };
 
+type SettingsSaveState = 'idle' | 'saving' | 'error';
+
+let _settingsSaveState: SettingsSaveState = 'idle';
+let _settingsSaveStateResetTimer: ReturnType<typeof setTimeout> | null = null;
+const _settingsSaveStateListeners = new Set<() => void>();
+
+export const getSettingsSaveState = (): SettingsSaveState => _settingsSaveState;
+
+export const subscribeToSettingsSaveState = (listener: () => void): (() => void) => {
+  _settingsSaveStateListeners.add(listener);
+  return () => _settingsSaveStateListeners.delete(listener);
+};
+
+/**
+ * Drive the shared settings save indicator from pages that persist through
+ * their own APIs instead of updateDesktopSettings. 'error' resets to idle.
+ */
+export const reportSettingsSaveState = (state: 'saving' | 'saved' | 'error'): void => {
+  dispatchSettingsSaveState(state);
+};
+
+const dispatchSettingsSaveState = (state: 'saving' | 'saved' | 'error'): void => {
+  if (_settingsSaveStateResetTimer) {
+    clearTimeout(_settingsSaveStateResetTimer);
+    _settingsSaveStateResetTimer = null;
+  }
+
+  // Quiet indicator: success is the normal case and renders nothing ('saved' → idle);
+  // only in-flight saves and failures surface in the UI.
+  const nextState: SettingsSaveState = state === 'saved' ? 'idle' : state;
+  if (nextState !== _settingsSaveState) {
+    _settingsSaveState = nextState;
+    _settingsSaveStateListeners.forEach((listener) => listener());
+  }
+
+  if (nextState === 'error') {
+    _settingsSaveStateResetTimer = setTimeout(() => dispatchSettingsSaveState('saved'), 6000);
+  }
+
+  if (typeof window === 'undefined') {
+    return;
+  }
+  window.dispatchEvent(new CustomEvent<'saving' | 'saved' | 'error'>('openchamber:settings-save-state', { detail: state }));
+};
+
 type PersistApi = {
   hasHydrated?: () => boolean;
   onFinishHydration?: (callback: () => void) => (() => void) | undefined;
@@ -1522,7 +1567,11 @@ async function _flushSettingsUpdate(): Promise<void> {
   _settingsFlushTimer = null;
   _settingsFlushWaiters = [];
   try {
-    if (!changes || !context || Object.keys(changes).length === 0 || !isSettingsRuntimeContextCurrent(context)) return;
+    if (!changes || !context || Object.keys(changes).length === 0 || !isSettingsRuntimeContextCurrent(context)) {
+      // Nothing will be written — clear any pending "Saving…" indicator.
+      dispatchSettingsSaveState('saved');
+      return;
+    }
 
     const runtimeSettings = getRuntimeSettingsAPI();
     if (runtimeSettings) {
@@ -1535,6 +1584,7 @@ async function _flushSettingsUpdate(): Promise<void> {
           dispatchSettingsSynced(updated);
           _settingsCache = null;
         }
+        dispatchSettingsSaveState(updated ? 'saved' : 'error');
         return;
       } catch (error) {
         if (!isSettingsRuntimeContextCurrent(context)) return;
@@ -1556,6 +1606,7 @@ async function _flushSettingsUpdate(): Promise<void> {
       if (!isSettingsRuntimeContextCurrent(context)) return;
       if (!response.ok) {
         console.warn('Failed to update shared settings via API:', response.status, response.statusText);
+        dispatchSettingsSaveState('error');
         return;
       }
 
@@ -1565,11 +1616,17 @@ async function _flushSettingsUpdate(): Promise<void> {
         persistToLocalStorage(updated);
         applyDesktopUiPreferences(updated);
         dispatchSettingsSynced(updated);
+        dispatchSettingsSaveState('saved');
         // Invalidate GET cache so next read sees the fresh data
         _settingsCache = null;
+      } else {
+        dispatchSettingsSaveState('error');
       }
     } catch (error) {
-      if (isSettingsRuntimeContextCurrent(context)) console.warn('Failed to update shared settings via API:', error);
+      if (isSettingsRuntimeContextCurrent(context)) {
+        console.warn('Failed to update shared settings via API:', error);
+        dispatchSettingsSaveState('error');
+      }
     }
   } finally {
     waiters.forEach((resolve) => resolve());
@@ -1590,6 +1647,7 @@ export const updateDesktopSettings = async (changes: Partial<DesktopSettings>): 
 
   _pendingSettingsChanges = { ...(_pendingSettingsChanges ?? {}), ...changes };
   _pendingSettingsContext = context;
+  dispatchSettingsSaveState('saving');
 
   if (_settingsFlushTimer) {
     clearTimeout(_settingsFlushTimer);
