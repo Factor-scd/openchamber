@@ -450,7 +450,8 @@ export const SettingsRadioOption: React.FC<SettingsRadioOptionProps> = ({
   return (
     <div
       className={cn(
-        'flex cursor-pointer items-start gap-2 py-0.5',
+        'flex cursor-pointer gap-2 py-0.5',
+        description != null ? 'items-start' : 'items-center',
         disabled && 'cursor-not-allowed opacity-60',
         className,
       )}
