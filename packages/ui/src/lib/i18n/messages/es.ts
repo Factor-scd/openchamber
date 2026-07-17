@@ -3,6 +3,11 @@ import { settingsDict } from './es.settings';
 
 export const dict: Record<I18nKey, string> = {
   ...settingsDict,
+  'terminalView.actions.attachSelection': 'Adjuntar salida seleccionada',
+  'terminalView.actions.restart': 'Reiniciar terminal',
+  'chat.message.terminalContext': '{terminal}, líneas {start}-{end}',
+  'chat.chatInput.terminalContext': '{terminal}, líneas {start}-{end}',
+  'chat.chatInput.terminalContextRemove': 'Eliminar contexto del terminal',
   "common.loading": "Cargando...",
   "common.unavailable": "No disponible",
   "common.language.english": "Inglés",
@@ -87,6 +92,7 @@ export const dict: Record<I18nKey, string> = {
   "mobile.menu.titleAria": "Herramientas del espacio de trabajo",
   "mobile.menu.files": "Archivos",
   "mobile.menu.changes": "Cambios",
+  "mobile.menu.terminal": "Terminal",
   "mobile.menu.mcp": "MCP",
   "mobile.menu.instances": "Instancias",
   "mobile.menu.update": "Actualizar",
@@ -1445,6 +1451,8 @@ export const dict: Record<I18nKey, string> = {
   "terminalView.quickKeys.tabAria": "Tab",
   "terminalView.quickKeys.controlLabel": "Ctrl",
   "terminalView.quickKeys.controlModifierAria": "Modificador de control",
+  "terminalView.quickKeys.altLabel": "Alt",
+  "terminalView.quickKeys.altModifierAria": "Modificador Alt",
   "terminalView.quickKeys.commandModifierAria": "Modificador de comando",
   "terminalView.quickKeys.arrowUpAria": "Flecha arriba",
   "terminalView.quickKeys.arrowLeftAria": "Flecha izquierda",

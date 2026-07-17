@@ -3,6 +3,11 @@ import { settingsDict } from './uk.settings';
 
 export const dict: Record<I18nKey, string> = {
   ...settingsDict,
+  'terminalView.actions.attachSelection': 'Прикріпити вибраний вивід',
+  'terminalView.actions.restart': 'Перезапустити термінал',
+  'chat.message.terminalContext': '{terminal}, рядки {start}-{end}',
+  'chat.chatInput.terminalContext': '{terminal}, рядки {start}-{end}',
+  'chat.chatInput.terminalContextRemove': 'Видалити контекст термінала',
   "common.loading": "Завантаження...",
   "common.unavailable": "Недоступно",
   "common.language.english": "англійська",
@@ -87,6 +92,7 @@ export const dict: Record<I18nKey, string> = {
   "mobile.menu.titleAria": "Інструменти робочого простору",
   "mobile.menu.files": "Файли",
   "mobile.menu.changes": "Зміни",
+  "mobile.menu.terminal": "Термінал",
   "mobile.menu.mcp": "MCP",
   "mobile.menu.instances": "Інстанси",
   "mobile.menu.update": "Оновити",
@@ -1445,6 +1451,8 @@ export const dict: Record<I18nKey, string> = {
   "terminalView.quickKeys.tabAria": "Tab",
   "terminalView.quickKeys.controlLabel": "Ctrl",
   "terminalView.quickKeys.controlModifierAria": "Модифікатор Ctrl",
+  "terminalView.quickKeys.altLabel": "Alt",
+  "terminalView.quickKeys.altModifierAria": "Модифікатор Alt",
   "terminalView.quickKeys.commandModifierAria": "Модифікатор Command",
   "terminalView.quickKeys.arrowUpAria": "Стрілка вгору",
   "terminalView.quickKeys.arrowLeftAria": "Стрілка вліво",

@@ -2,6 +2,11 @@ import { settingsDict } from './en.settings';
 
 export const dict = {
   ...settingsDict,
+  'terminalView.actions.attachSelection': 'Attach selected output',
+  'terminalView.actions.restart': 'Restart terminal',
+  'chat.message.terminalContext': '{terminal}, lines {start}-{end}',
+  'chat.chatInput.terminalContext': '{terminal}, lines {start}-{end}',
+  'chat.chatInput.terminalContextRemove': 'Remove terminal context',
   'common.loading': 'Loading...',
   'common.unavailable': 'Unavailable',
   'common.language.english': 'English',
@@ -86,6 +91,7 @@ export const dict = {
   'mobile.menu.titleAria': 'Workspace tools',
   'mobile.menu.files': 'Files',
   'mobile.menu.changes': 'Changes',
+  'mobile.menu.terminal': 'Terminal',
   'mobile.menu.mcp': 'MCP',
   'mobile.menu.instances': 'Instances',
   'mobile.menu.update': 'Update',
@@ -1467,6 +1473,8 @@ export const dict = {
   'terminalView.quickKeys.tabAria': 'Tab',
   'terminalView.quickKeys.controlLabel': 'Ctrl',
   'terminalView.quickKeys.controlModifierAria': 'Control modifier',
+  'terminalView.quickKeys.altLabel': 'Alt',
+  'terminalView.quickKeys.altModifierAria': 'Alt modifier',
   'terminalView.quickKeys.commandModifierAria': 'Command modifier',
   'terminalView.quickKeys.arrowUpAria': 'Arrow up',
   'terminalView.quickKeys.arrowLeftAria': 'Arrow left',

@@ -3,6 +3,11 @@ import { settingsDict } from './ja.settings';
 
 export const dict: Record<I18nKey, string> = {
   ...settingsDict,
+  'terminalView.actions.attachSelection': '選択した出力を添付',
+  'terminalView.actions.restart': 'ターミナルを再起動',
+  'chat.message.terminalContext': '{terminal}、{start}〜{end}行',
+  'chat.chatInput.terminalContext': '{terminal}、{start}〜{end}行',
+  'chat.chatInput.terminalContextRemove': 'ターミナルコンテキストを削除',
   'common.loading': '読み込み中...',
   'common.unavailable': '利用できません',
   'common.language.english': '英語',
@@ -88,6 +93,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.menu.titleAria': 'ワークスペースツール',
   'mobile.menu.files': 'ファイル',
   'mobile.menu.changes': '変更',
+  'mobile.menu.terminal': 'ターミナル',
   'mobile.menu.mcp': 'MCP',
   'mobile.menu.update': '更新',
   'mobile.menu.settings': '設定',
@@ -1463,6 +1469,8 @@ export const dict: Record<I18nKey, string> = {
   'terminalView.quickKeys.tabAria': 'Tab',
   'terminalView.quickKeys.controlLabel': 'Ctrl',
   'terminalView.quickKeys.controlModifierAria': 'Control修飾キー',
+  'terminalView.quickKeys.altLabel': 'Alt',
+  'terminalView.quickKeys.altModifierAria': 'Alt修飾キー',
   'terminalView.quickKeys.commandModifierAria': 'Command修飾キー',
   'terminalView.quickKeys.arrowUpAria': '上矢印',
   'terminalView.quickKeys.arrowLeftAria': '左矢印',

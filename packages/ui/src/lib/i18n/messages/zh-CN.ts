@@ -3,6 +3,11 @@ import { settingsDict } from './zh-CN.settings';
 
 export const dict: Record<I18nKey, string> = {
   ...settingsDict,
+  'terminalView.actions.attachSelection': '附加所选输出',
+  'terminalView.actions.restart': '重启终端',
+  'chat.message.terminalContext': '{terminal}，第 {start}-{end} 行',
+  'chat.chatInput.terminalContext': '{terminal}，第 {start}-{end} 行',
+  'chat.chatInput.terminalContextRemove': '移除终端上下文',
   'common.loading': '加载中...',
   'common.unavailable': '不可用',
   'common.language.english': 'English',
@@ -87,6 +92,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.menu.titleAria': '工作区工具',
   'mobile.menu.files': '文件',
   'mobile.menu.changes': '更改',
+  'mobile.menu.terminal': '终端',
   'mobile.menu.mcp': 'MCP',
   'mobile.menu.instances': '实例',
   'mobile.menu.update': '更新',
@@ -1433,6 +1439,8 @@ export const dict: Record<I18nKey, string> = {
   'terminalView.quickKeys.tabAria': 'Tab 键',
   'terminalView.quickKeys.controlLabel': 'Ctrl',
   'terminalView.quickKeys.controlModifierAria': 'Control 修饰键',
+  'terminalView.quickKeys.altLabel': 'Alt',
+  'terminalView.quickKeys.altModifierAria': 'Alt 修饰键',
   'terminalView.quickKeys.commandModifierAria': 'Command 修饰键',
   'terminalView.quickKeys.arrowUpAria': '上箭头',
   'terminalView.quickKeys.arrowLeftAria': '左箭头',
