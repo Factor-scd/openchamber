@@ -5066,6 +5066,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                         "flex flex-col relative overflow-visible",
                         isComposerExpanded && 'flex-1 min-h-0',
                         "border border-border/80",
+                        !isMobile && "shadow-[0_4px_16px_-4px_rgb(0_0_0_/_0.12)]",
                         "focus-within:ring-1",
                         inputMode === 'shell'
                             ? 'focus-within:ring-[var(--status-info)]'
