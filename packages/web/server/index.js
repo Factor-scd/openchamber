@@ -74,6 +74,7 @@ import { createSessionRuntime } from './lib/opencode/session-runtime.js';
 import { createOpenCodeWatcherRuntime } from './lib/opencode/watcher.js';
 import { createSessionAssistRuntime } from './lib/session-assist/runtime.js';
 import { createSessionGoalRuntime } from './lib/session-goal/runtime.js';
+import { createContextObligatoryRuntime } from './lib/context-obligatory/runtime.js';
 import { createScheduledTasksRuntime } from './lib/scheduled-tasks/runtime.js';
 import { createServerStartupRuntime } from './lib/opencode/server-startup-runtime.js';
 import { createTunnelWiringRuntime } from './lib/opencode/tunnel-wiring-runtime.js';
@@ -768,6 +769,10 @@ const sessionGoalRuntime = createSessionGoalRuntime({
     });
   },
 });
+const contextObligatoryRuntime = createContextObligatoryRuntime({
+  buildOpenCodeUrl,
+  getOpenCodeAuthHeaders,
+});
 
 const globalMessageStreamHub = createGlobalMessageStreamHub({
   buildOpenCodeUrl,
@@ -813,6 +818,7 @@ globalMessageStreamHub.subscribeEvent((event) => {
     : '';
   sessionAssistRuntime.processPayload(payload, directory);
   sessionGoalRuntime.processPayload(payload, directory);
+  contextObligatoryRuntime.processPayload(payload, directory);
 });
 
 const processForwardedEventPayload = (payload, emitSyntheticEvent) => {
@@ -1130,6 +1136,7 @@ const gracefulShutdownRuntime = createGracefulShutdownRuntime({
   openCodeWatcherRuntime,
   sessionAssistRuntime,
   sessionGoalRuntime,
+  contextObligatoryRuntime,
   sessionRuntime,
   getHealthCheckInterval: () => healthCheckInterval,
   clearHealthCheckInterval: (value) => clearInterval(value),
