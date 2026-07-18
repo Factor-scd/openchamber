@@ -61,6 +61,10 @@ Examples:
 - per-directory session/message bootstrap
 - session/message/part SSE updates
 
+Directory bootstrap must publish a closed session hierarchy: when a child is
+returned before the roots query catches up during cold startup, retain or
+recover its referenced parent instead of exposing an orphan-only snapshot.
+
 ### Global session list
 
 Use `useGlobalSessionsStore` when the UI needs a **shared global session cache**.
