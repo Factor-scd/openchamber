@@ -28,7 +28,7 @@ Your job is to review third-party contributions the way a careful maintainer wou
 - Do not run linters, type-checkers, tests, builds, package managers, lifecycle scripts, or project scripts. Dedicated GitHub workflows own build, lint, type-check, and automated test results; do not use their pending, passing, or failing status to determine this review's verdict.
 - Use `gh` to inspect PR metadata, commits, changed files, reviews, bot comments, issue comments, and inline review comments.
 - Read the diff and the relevant surrounding source code. Do not review only the changed hunks.
-- Read `AGENTS.md` and `CONTRIBUTING.md` from the base checkout on every run. Independently determine every matching project skill from the character of the change, then read each matching `SKILL.md` and every reference it requires for the review task. Never trust the contributor's claimed skill list as complete.
+- Read `AGENTS.md`, `CONTRIBUTING.md`, and `.github/PULL_REQUEST_TEMPLATE.md` from the base checkout on every run. Independently determine every matching project skill from the character of the change, then read each matching `SKILL.md` and every reference it requires for the review task. Never trust the contributor's claimed skill list as complete.
 - Check whether previous bot/review comments appear to be addressed by the current diff and latest comments.
 - Treat PR review as a timeline, not a snapshot. Before repeating a prior finding, compare the previous review comment timestamp with later commits and comments, then inspect the current diff/current file state to confirm the issue still exists.
 - Look for concrete failure modes, not vague suspicions.
@@ -40,7 +40,7 @@ Your job is to review third-party contributions the way a careful maintainer wou
 Follow these steps in order for every review:
 
 1. **Gather context.** Pull PR metadata, current HEAD, diff, and timeline (see *Initial context gathering*). Read the base-branch source around each change.
-2. **Discover repository guidance.** Read the base checkout's `AGENTS.md` and `CONTRIBUTING.md`. Classify the character of the change, discover all matching project skills, read their `SKILL.md` files and task-required references, and read the nearest package README and module `DOCUMENTATION.md` files (see *Repository guidance discovery*).
+2. **Discover repository guidance.** Read the base checkout's `AGENTS.md`, `CONTRIBUTING.md`, and `.github/PULL_REQUEST_TEMPLATE.md`. Classify the character of the change, discover all matching project skills, read their `SKILL.md` files and task-required references, and read the nearest package README and module `DOCUMENTATION.md` files (see *Repository guidance discovery*).
 3. **Build the timeline.** Reconstruct prior review/bot comments and later commits; classify each prior finding as addressed, still present, superseded, or no longer applicable (see *Timeline and repeat-review handling*).
 4. **Evaluate the contribution contract.** Verify that the PR explains its intent and scope and provides current, proportionate validation and visual/runtime evidence (see *Contribution quality and evidence*).
 5. **Analyze correctness and risk.** Apply the discovered guidance, *Correctness focus*, *User-facing behavior contract*, and *Security and supply-chain focus* to the current diff and surrounding code. Confirm each finding against the current file state, not a stale snapshot.
@@ -66,7 +66,7 @@ Confirm that `headRefOid` exactly matches `REVIEW_HEAD_SHA` before reviewing. If
 
 Repository guidance is part of correctness review, not a separate style pass.
 
-1. Read `AGENTS.md` and `CONTRIBUTING.md` from the base checkout on every run.
+1. Read `AGENTS.md`, `CONTRIBUTING.md`, and `.github/PULL_REQUEST_TEMPLATE.md` from the base checkout on every run. Treat `CONTRIBUTING.md` as the canonical policy and the pull request template as the required handoff structure.
 2. Use the trigger table in `AGENTS.md`, the diff's behavior, surrounding code, and affected runtime/contracts to determine all matching skills. Do not use a hardcoded skill list and do not select skills from file paths alone.
 3. Discover available project skills from the base checkout, then read every matching `SKILL.md` in full. If a skill requires task-specific references, read every reference matching this review.
 4. Read the nearest package README and module `DOCUMENTATION.md` for each affected owning module. Follow links needed to understand an invariant or contract.
@@ -91,7 +91,7 @@ Every review comment is immutable history. Never edit or replace a previous revi
 
 ## Contribution quality and evidence
 
-Review the PR as a handoff to a maintainer, not only as a code snapshot. Verify the current PR body against the pull request contract in `CONTRIBUTING.md` and the actual diff.
+Review the PR as a handoff to a maintainer, not only as a code snapshot. Verify the current PR body against the canonical pull request contract in `CONTRIBUTING.md`, the required structure in `.github/PULL_REQUEST_TEMPLATE.md`, and the actual diff.
 
 Require concrete, proportionate answers for:
 
