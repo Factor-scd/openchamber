@@ -11,7 +11,12 @@ import { useAutoReviewStore } from '@/stores/useAutoReviewStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSelectionStore } from '@/sync/selection-store';
 import { useInputStore } from '@/sync/input-store';
-import { ACCEPTED_ATTACHMENT_EXTENSIONS, ATTACHMENT_ACCEPT } from '@/sync/attachment-files';
+import {
+    ACCEPTED_ATTACHMENT_EXTENSIONS,
+    ATTACHMENT_ACCEPT,
+    getUnsupportedAttachmentInputs,
+    type AttachmentInputModality,
+} from '@/sync/attachment-files';
 import type { AttachedFile } from '@/stores/types/sessionTypes';
 import * as sessionActions from '@/sync/session-actions';
 import { useDirectorySync, useUserMessageHistory } from '@/sync/sync-context';
@@ -1094,6 +1099,13 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
 
     const currentProviderId = useConfigStore((state) => state.currentProviderId);
     const currentModelId = useConfigStore((state) => state.currentModelId);
+    const getModelMetadata = useConfigStore((state) => state.getModelMetadata);
+    // Subscribe to both sources read by getModelMetadata so async metadata and provider updates are observed.
+    useConfigStore((state) => state.modelsMetadata);
+    useConfigStore((state) => state.providers);
+    const currentModelMetadata = currentProviderId && currentModelId
+        ? getModelMetadata(currentProviderId, currentModelId)
+        : undefined;
     const currentVariant = useConfigStore((state) => state.currentVariant);
     const currentAgentName = useConfigStore((state) => state.currentAgentName);
     const setAgent = useConfigStore((state) => state.setAgent);
@@ -1129,6 +1141,53 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         title: '',
         content: '',
     });
+    const attachmentCompatibilityRef = React.useRef({
+        modelKey: `${currentProviderId ?? ''}/${currentModelId ?? ''}`,
+        modalitySignature: currentModelMetadata?.modalities?.input?.slice().sort().join(',') ?? null,
+        attachmentIds: new Set<string>(),
+    });
+
+    React.useEffect(() => {
+        const modelKey = `${currentProviderId ?? ''}/${currentModelId ?? ''}`;
+        const inputModalities = currentModelMetadata?.modalities?.input;
+        const modalitySignature = inputModalities?.slice().sort().join(',') ?? null;
+        const previous = attachmentCompatibilityRef.current;
+        const modelChanged = previous.modelKey !== modelKey;
+        const metadataBecameAvailable = previous.modalitySignature === null && modalitySignature !== null;
+        const filesToCheck = modelChanged || metadataBecameAvailable
+            ? attachedFiles
+            : attachedFiles.filter((file) => !previous.attachmentIds.has(file.id));
+
+        attachmentCompatibilityRef.current = {
+            modelKey,
+            modalitySignature,
+            attachmentIds: new Set(attachedFiles.map((file) => file.id)),
+        };
+
+        if (!inputModalities || filesToCheck.length === 0) return;
+
+        const incompatibleFiles = getUnsupportedAttachmentInputs(filesToCheck, inputModalities);
+        if (incompatibleFiles.length === 0) return;
+
+        const unsupportedModalities = Array.from(new Set(incompatibleFiles.map(({ modality }) => modality)));
+        const modalityLabels: Record<AttachmentInputModality, string> = {
+            text: t('chat.modelControls.modality.text'),
+            image: t('chat.modelControls.modality.image'),
+            pdf: t('chat.modelControls.modality.pdf'),
+            audio: t('chat.modelControls.modality.audio'),
+            video: t('chat.modelControls.modality.video'),
+        };
+        const filenames = incompatibleFiles.map(({ attachment }) => attachment.filename);
+        const fileSummary = filenames.length > 3
+            ? `${filenames.slice(0, 3).join(', ')} (+${filenames.length - 3})`
+            : filenames.join(', ');
+
+        toast.warning(t('chat.chatInput.toast.unsupportedAttachmentModalities', {
+            model: currentModelMetadata.name ?? currentModelId ?? '',
+            modalities: unsupportedModalities.map((modality) => modalityLabels[modality]).join(', '),
+            files: fileSummary,
+        }), { id: `attachment-modalities:${modelKey}` });
+    }, [attachedFiles, currentModelId, currentModelMetadata, currentProviderId, t]);
 
     const handleShowAttachmentPreview = React.useCallback((content: ToolPopupContent) => {
         if (!content.image) return;

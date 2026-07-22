@@ -149,6 +149,33 @@ type OpenCodeAttachmentMimeType =
   | "application/pdf"
   | "text/plain"
 
+export type AttachmentInputModality = "text" | "image" | "pdf" | "audio" | "video"
+
+export const getAttachmentInputModality = (mimeType: string): AttachmentInputModality | undefined => {
+  const normalizedMimeType = mimeType.toLowerCase().split(";", 1)[0]?.trim() ?? ""
+  if (normalizedMimeType.startsWith("image/")) return "image"
+  if (normalizedMimeType.startsWith("audio/")) return "audio"
+  if (normalizedMimeType.startsWith("video/")) return "video"
+  if (normalizedMimeType === "application/pdf") return "pdf"
+  if (normalizedMimeType.startsWith("text/")) return "text"
+  return undefined
+}
+
+export const getUnsupportedAttachmentInputs = <T extends { mimeType: string }>(
+  attachments: T[],
+  supportedInputModalities: string[],
+): Array<{ attachment: T; modality: AttachmentInputModality }> => {
+  const supportedModalities = new Set(supportedInputModalities.map((modality) => modality.toLowerCase()))
+  const unsupportedInputs: Array<{ attachment: T; modality: AttachmentInputModality }> = []
+  for (const attachment of attachments) {
+    const modality = getAttachmentInputModality(attachment.mimeType)
+    if (modality && !supportedModalities.has(modality)) {
+      unsupportedInputs.push({ attachment, modality })
+    }
+  }
+  return unsupportedInputs
+}
+
 const SUPPORTED_BINARY_MIMES = new Map<string, OpenCodeAttachmentMimeType>([
   ["image/png", "image/png"],
   ["image/jpeg", "image/jpeg"],
