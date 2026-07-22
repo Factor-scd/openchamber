@@ -132,6 +132,7 @@ Use an explicit override when testing a different OpenCode CLI build or when a u
 - Desktop host switcher and deep-link imports.
 - Local and remote instance handling.
 - SSH host import, connections, logs, and port forwarding.
+- SSH uses OpenSSH ControlMaster on macOS/Linux. Windows uses independent hidden OpenSSH processes for setup commands and each long-lived forward because Win32 OpenSSH does not support ControlMaster reliably.
 - Tunnel lifecycle integration through the web server runtime.
 - Auto-update checks, downloads, and restart/apply flow.
 
