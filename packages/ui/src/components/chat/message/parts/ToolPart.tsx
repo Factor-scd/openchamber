@@ -4,6 +4,7 @@ import { RuntimeAPIContext } from '@/contexts/runtimeAPIContext';
 import { PatchDiff } from '@pierre/diffs/react';
 import { cn } from '@/lib/utils';
 import { SimpleMarkdownRenderer } from '../../MarkdownRenderer';
+import { MessageFilesDisplay } from '../../FileAttachment';
 import { getToolMetadata } from '@/lib/toolHelpers';
 import type { ToolPart as ToolPartType, ToolState as ToolStateUnion, FilePart } from '@opencode-ai/sdk/v2';
 import { toolDisplayStyles } from '@/lib/typography';
@@ -1513,15 +1514,6 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
     const hasStringOutput = typeof rawOutput === 'string' && rawOutput.length > 0;
     const outputString = typeof rawOutput === 'string' ? rawOutput : '';
     const attachments = stateWithData.attachments;
-    const imageAttachments = React.useMemo(() => {
-        if (!Array.isArray(attachments)) return [];
-        return attachments.filter((f): f is FilePart & { url: string } => f.type === 'file' && typeof f.mime === 'string' && f.mime.startsWith('image/') && typeof f.url === 'string');
-    }, [attachments]);
-
-    const otherAttachments = React.useMemo(() => {
-        if (!Array.isArray(attachments)) return [];
-        return attachments.filter((f): f is FilePart => f.type === 'file' && !(typeof f.mime === 'string' && f.mime.startsWith('image/')));
-    }, [attachments]);
 
     const fileDiff = isRecord(metadata?.filediff) ? metadata.filediff : undefined;
     const diffContent = getPatchText((metadata as { patch?: unknown } | undefined)?.patch)
@@ -1583,33 +1575,6 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
     React.useEffect(() => {
         setDiffViewMode('unified');
     }, [part.id]);
-
-    const imageGallery = React.useMemo(() => {
-        return imageAttachments.flatMap((f) => {
-            if (!f.url) return [];
-            return [{ url: f.url, mimeType: f.mime, filename: f.filename }];
-        });
-    }, [imageAttachments]);
-
-    const handleAttachmentClick = React.useCallback((index: number) => {
-        if (!onShowPopup || index >= imageGallery.length) return;
-        const file = imageGallery[index];
-        if (!file?.url) return;
-        const filename = file.filename || t('filesView.editor.imageAltFallback');
-        onShowPopup({
-            open: true,
-            title: filename,
-            content: '',
-            metadata: { tool: 'image-preview', filename: file.filename, mime: file.mimeType },
-            image: {
-                url: file.url,
-                mimeType: file.mimeType,
-                filename: file.filename,
-                gallery: imageGallery,
-                index,
-            },
-        });
-    }, [imageGallery, onShowPopup, t]);
 
     const renderScrollableBlock = (
         content: React.ReactNode,
@@ -1964,60 +1929,8 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
                 </>
             )}
 
-            {attachments && Array.isArray(attachments) && attachments.length > 0 && state.status === 'completed' ? (
-                <div className="space-y-2">
-                    {imageAttachments.length > 0 ? (
-                        <div className="flex flex-wrap gap-2">
-                            {imageAttachments.map((file, index) => {
-                                const filename = file.filename || t('chat.toolPart.attachmentFallback');
-                                return (
-                                    <button
-                                        key={file.url || filename || index}
-                                        type="button"
-                                        onClick={(e) => { e.stopPropagation(); handleAttachmentClick(index); }}
-                                        className="relative flex-none border border-border/40 bg-muted/10 overflow-hidden rounded-lg h-12 w-12 sm:h-14 sm:w-14 md:h-16 md:w-16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-primary"
-                                        aria-label={filename}
-                                    >
-                                        {file.url ? (
-                                            <img
-                                                src={file.url}
-                                                alt={filename}
-                                                className="h-full w-full object-cover"
-                                                loading="lazy"
-                                                onError={(e) => {
-                                                    const target = e.target as HTMLImageElement;
-                                                    target.style.visibility = 'hidden';
-                                                }}
-                                            />
-                                        ) : (
-                                            <div className="h-full w-full flex items-center justify-center bg-muted/30 text-muted-foreground">
-                                                <Icon name="file-image" className="h-6 w-6" />
-                                            </div>
-                                        )}
-                                        <span className="sr-only">{filename}</span>
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    ) : null}
-                    {otherAttachments.length > 0 ? (
-                        <div className="flex flex-wrap gap-1.5">
-                            {otherAttachments.map((file, index) => {
-                                const fileName = file.filename || t('chat.fileAttachment.fileFallback');
-                                const ext = fileName.split('.').pop() || '';
-                                return (
-                                    <div
-                                        key={file.url || `${fileName}-${index}`}
-                                        className="inline-flex items-center bg-muted/30 border border-border/30 typography-meta gap-1 px-2 py-0.5 rounded-lg"
-                                    >
-                                        <FileTypeIcon filePath={fileName} extension={ext} className="text-muted-foreground h-3.5 w-3.5" />
-                                        <span className="truncate max-w-[140px] block" title={fileName}>{fileName}</span>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    ) : null}
-                </div>
+            {Array.isArray(attachments) && attachments.length > 0 && state.status === 'completed' ? (
+                <MessageFilesDisplay files={attachments} onShowPopup={onShowPopup} compact />
             ) : null}
         </div>
     );

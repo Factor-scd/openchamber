@@ -112,7 +112,7 @@ function getPartStateAttachments(part: Part): Array<unknown> | undefined {
   const state = (part as Record<string, unknown>).state as Record<string, unknown> | undefined
   if (!state) return undefined
   const attachments = state.attachments
-  return Array.isArray(attachments) && attachments.length > 0 ? attachments : undefined
+  return Array.isArray(attachments) ? attachments : undefined
 }
 
 function hasLiveStreamingField(part: Part): boolean {
@@ -137,7 +137,7 @@ function mergeMaterializedPart(existing: Part | undefined, next: Part): Part {
 
   if (getPartEndTime(next) !== undefined) {
     const existingAttachments = getPartStateAttachments(existing)
-    if (existingAttachments && !getPartStateAttachments(next)) {
+    if (existingAttachments?.length && getPartStateAttachments(next) === undefined) {
       const nextRecord = { ...next }
       const nextState = { ...((next as Record<string, unknown>).state as Record<string, unknown> ?? {}), attachments: existingAttachments }
       ;(nextRecord as Record<string, unknown>).state = nextState
@@ -161,7 +161,7 @@ function mergeMaterializedPart(existing: Part | undefined, next: Part): Part {
   }
 
   const existingAttachments = getPartStateAttachments(existing)
-  if (existingAttachments && !getPartStateAttachments(next)) {
+  if (existingAttachments?.length && getPartStateAttachments(next) === undefined) {
     if (merged === next) merged = { ...next }
     const mergedRecord = merged as Record<string, unknown>
     const nextState = (next as Record<string, unknown>).state as Record<string, unknown> | undefined

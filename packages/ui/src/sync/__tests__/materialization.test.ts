@@ -313,6 +313,80 @@ describe("materializeSessionSnapshots", () => {
     expect(mergedPart.state?.attachments).toHaveLength(1)
     expect((mergedPart.state?.attachments?.[0] as { id?: string })?.id).toBe("att-new")
   })
+
+  test("treats empty state.attachments in completed snapshot as authoritative", () => {
+    const livePart = {
+      id: "prt_1",
+      messageID: "msg_1",
+      sessionID: "ses_1",
+      type: "tool",
+      state: {
+        status: "completed",
+        output: "done",
+        time: { start: 100, end: 200 },
+        attachments: [{ id: "att-old", type: "file", mime: "image/png", url: "data:image/png,..." }],
+      },
+    } as unknown as Part
+    const snapshotPart = {
+      id: "prt_1",
+      messageID: "msg_1",
+      sessionID: "ses_1",
+      type: "tool",
+      state: {
+        status: "completed",
+        output: "done",
+        time: { start: 100, end: 200 },
+        attachments: [],
+      },
+    } as unknown as Part
+    const state = {
+      message: { ses_1: [message("msg_1")] },
+      part: { msg_1: [livePart] },
+    }
+
+    const result = materializeSessionSnapshots(
+      state,
+      "ses_1",
+      [{ info: message("msg_1"), parts: [snapshotPart] }],
+    )
+
+    const mergedPart = result.part.msg_1[0] as { state?: { attachments?: Array<unknown> } }
+    expect(mergedPart.state?.attachments).toEqual([])
+  })
+
+  test("treats empty state.attachments in streaming snapshot as authoritative", () => {
+    const livePart = {
+      id: "prt_1",
+      messageID: "msg_1",
+      sessionID: "ses_1",
+      type: "tool",
+      state: {
+        status: "running",
+        time: { start: 100 },
+        attachments: [{ id: "att-old", type: "file", mime: "image/png", url: "data:image/png,..." }],
+      },
+    } as unknown as Part
+    const snapshotPart = {
+      id: "prt_1",
+      messageID: "msg_1",
+      sessionID: "ses_1",
+      type: "tool",
+      state: { status: "running", time: { start: 100 }, attachments: [] },
+    } as unknown as Part
+    const state = {
+      message: { ses_1: [message("msg_1")] },
+      part: { msg_1: [livePart] },
+    }
+
+    const result = materializeSessionSnapshots(
+      state,
+      "ses_1",
+      [{ info: message("msg_1"), parts: [snapshotPart] }],
+    )
+
+    const mergedPart = result.part.msg_1[0] as { state?: { attachments?: Array<unknown> } }
+    expect(mergedPart.state?.attachments).toEqual([])
+  })
 })
 
 describe("getSessionMaterializationStatus", () => {
