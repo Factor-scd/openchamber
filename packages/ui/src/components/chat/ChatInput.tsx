@@ -10,7 +10,7 @@ import { createMessageQueueTarget, getMessageQueueKey, useMessageQueueStore, typ
 import { useAutoReviewStore } from '@/stores/useAutoReviewStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSelectionStore } from '@/sync/selection-store';
-import { useInputStore } from '@/sync/input-store';
+import { ACCEPTED_ATTACHMENT_EXTENSIONS, ATTACHMENT_ACCEPT, useInputStore } from '@/sync/input-store';
 import type { AttachedFile } from '@/stores/types/sessionTypes';
 import * as sessionActions from '@/sync/session-actions';
 import { useDirectorySync, useUserMessageHistory } from '@/sync/sync-context';
@@ -3716,14 +3716,15 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         }
 
         if (files.length > 0) {
+            let attached = false;
             for (const file of files) {
                 try {
-                    await addAttachedFile(file);
+                    attached = (await addAttachedFile(file)) || attached;
                 } catch (error) {
                     console.error('File attach failed', error);
-                    toast.error(error instanceof Error ? error.message : t('chat.chatInput.toast.attachFileFailed'));
                 }
             }
+            if (!attached) toast.error(t('chat.chatInput.toast.attachFileFailed'));
         }
         clearDropTextSuppression();
     };
@@ -3744,20 +3745,23 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
 
     const attachFiles = React.useCallback(async (files: FileList | File[]) => {
         const list = Array.isArray(files) ? files : Array.from(files);
+        let attached = false;
 
         for (const file of list) {
             try {
-                await addAttachedFile(file);
+                attached = (await addAttachedFile(file)) || attached;
             } catch (error) {
                 console.error('File attach failed', error);
-                toast.error(error instanceof Error ? error.message : t('chat.chatInput.toast.attachFileFailed'));
             }
+        }
+        if (list.length > 0 && !attached) {
+            toast.error(t('chat.chatInput.toast.attachFileFailed'));
         }
     }, [addAttachedFile, t]);
 
     const handleVSCodePickFiles = React.useCallback(async () => {
         try {
-            const data = (await vscodeApi?.pickFiles?.()) as {
+            const data = (await vscodeApi?.pickFiles?.({ extensions: ACCEPTED_ATTACHMENT_EXTENSIONS })) as {
                 files?: Array<{ name: string; mimeType?: string; dataUrl?: string }>;
                 skipped?: Array<{ name?: string; reason?: string }>;
             } | undefined;
@@ -5592,7 +5596,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             multiple
             className="hidden"
             onChange={handleLocalFileSelect}
-            accept="*/*"
+            accept={ATTACHMENT_ACCEPT}
         />
 
         {/* Mobile attachment sheet: replaces the dropdown (which stole focus and

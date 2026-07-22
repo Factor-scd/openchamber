@@ -51,6 +51,8 @@ So:
 | `selection-store.ts` | Model/agent/variant selections | App UI state |
 | `voice-store.ts` | Voice state | App UI state |
 
+Local chat attachments are normalized before entering `input-store.ts`. PNG, JPEG, GIF, WebP, and PDF retain their media type; recognized text/code formats and unknown files whose first 4 KB are text are sent as `text/plain`; binary files outside the supported media types are rejected. Browser and VS Code pickers expose the same OpenCode-compatible extension allowlist, while drag-and-drop may still accept an unknown extension after content inspection.
+
 ## Session list rules
 
 ### Directory bootstrap scheduling

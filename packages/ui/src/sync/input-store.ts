@@ -10,6 +10,110 @@ const FILE_URI_PREFIX = "file://"
 const pendingVSCodeSelectionKeys = new Set<string>()
 let attachmentReadGeneration = 0
 
+const ACCEPTED_ATTACHMENT_TYPES = [
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+  "application/pdf",
+  "text/*",
+  "application/json",
+  "application/ld+json",
+  "application/toml",
+  "application/x-toml",
+  "application/x-yaml",
+  "application/xml",
+  "application/yaml",
+  ".c",
+  ".cc",
+  ".cjs",
+  ".conf",
+  ".cpp",
+  ".css",
+  ".csv",
+  ".cts",
+  ".env",
+  ".go",
+  ".gql",
+  ".graphql",
+  ".h",
+  ".hh",
+  ".hpp",
+  ".htm",
+  ".html",
+  ".ini",
+  ".java",
+  ".js",
+  ".json",
+  ".jsx",
+  ".log",
+  ".md",
+  ".mdx",
+  ".mjs",
+  ".mts",
+  ".py",
+  ".rb",
+  ".rs",
+  ".sass",
+  ".scss",
+  ".sh",
+  ".sql",
+  ".toml",
+  ".ts",
+  ".tsx",
+  ".txt",
+  ".xml",
+  ".yaml",
+  ".yml",
+  ".zsh",
+] as const
+
+export const ATTACHMENT_ACCEPT = ACCEPTED_ATTACHMENT_TYPES.join(",")
+
+const ATTACHMENT_MIME_EXTENSIONS = new Map<string, string>([
+  ["image/png", "png"],
+  ["image/jpeg", "jpg"],
+  ["image/gif", "gif"],
+  ["image/webp", "webp"],
+  ["application/pdf", "pdf"],
+  ["application/json", "json"],
+  ["application/ld+json", "jsonld"],
+  ["application/toml", "toml"],
+  ["application/x-toml", "toml"],
+  ["application/x-yaml", "yaml"],
+  ["application/xml", "xml"],
+  ["application/yaml", "yaml"],
+])
+const TEXT_ATTACHMENT_EXTENSIONS = ["txt", "text", "md", "markdown", "log", "csv"]
+
+export const ACCEPTED_ATTACHMENT_EXTENSIONS = Array.from(new Set(
+  ACCEPTED_ATTACHMENT_TYPES.flatMap((type) => {
+    if (type.startsWith(".")) return [type.slice(1)]
+    if (type === "text/*") return TEXT_ATTACHMENT_EXTENSIONS
+    const extension = ATTACHMENT_MIME_EXTENSIONS.get(type)
+    return extension ? [extension] : []
+  })
+)).sort()
+
+const IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"])
+const IMAGE_EXTENSIONS = new Map([
+  ["gif", "image/gif"],
+  ["jpeg", "image/jpeg"],
+  ["jpg", "image/jpeg"],
+  ["png", "image/png"],
+  ["webp", "image/webp"],
+])
+const TEXT_MIMES = new Set([
+  "application/json",
+  "application/ld+json",
+  "application/toml",
+  "application/x-toml",
+  "application/x-yaml",
+  "application/xml",
+  "application/yaml",
+])
+const ATTACHMENT_SAMPLE_BYTES = 4096
+
 const encodeFilePath = (filepath: string): string => {
   let normalized = filepath.replace(/\\/g, "/")
   if (/^[A-Za-z]:/.test(normalized)) {
@@ -34,13 +138,41 @@ const toFileUrl = (filepath: string): string => {
 
 const getVSCodeSelectionKey = (path: string, filename: string): string => `${path}\u0000${filename}`
 
-const readFileAsDataUrl = (file: File): Promise<string> => new Promise((resolve, reject) => {
+const readFileAsDataUrl = (file: File, mime: string): Promise<string> => new Promise((resolve, reject) => {
   const reader = new FileReader()
-  reader.onload = () => resolve(reader.result as string)
+  reader.onload = () => {
+    const value = typeof reader.result === "string" ? reader.result : ""
+    const commaIndex = value.indexOf(",")
+    resolve(commaIndex === -1 ? value : `data:${mime};base64,${value.slice(commaIndex + 1)}`)
+  }
   reader.onerror = () => reject(reader.error ?? new Error("Failed to read file"))
   reader.onabort = () => reject(new Error("File read aborted"))
   reader.readAsDataURL(file)
 })
+
+const inspectTextContent = async (file: File): Promise<"text/plain" | undefined> => {
+  const bytes = new Uint8Array(await file.slice(0, ATTACHMENT_SAMPLE_BYTES).arrayBuffer())
+  if (bytes.some((byte) => byte === 0)) return
+  const controlBytes = bytes.filter((byte) => byte < 9 || (byte > 13 && byte < 32)).length
+  if (bytes.length > 0 && controlBytes / bytes.length > 0.3) return
+  return "text/plain"
+}
+
+const getAttachmentMime = (file: File): string | Promise<"text/plain" | undefined> | undefined => {
+  const type = file.type.split(";", 1)[0]?.trim().toLowerCase() ?? ""
+  if (IMAGE_MIMES.has(type) || type === "application/pdf") return type
+
+  const extensionIndex = file.name.lastIndexOf(".")
+  const extension = extensionIndex === -1 ? "" : file.name.slice(extensionIndex + 1).toLowerCase()
+  const fallback = IMAGE_EXTENSIONS.get(extension) ?? (extension === "pdf" ? "application/pdf" : undefined)
+  if ((!type || type === "application/octet-stream") && fallback) return fallback
+
+  if (type.startsWith("text/") || TEXT_MIMES.has(type) || type.endsWith("+json") || type.endsWith("+xml")) {
+    return "text/plain"
+  }
+
+  return inspectTextContent(file)
+}
 
 const getDataUrlByteSize = (url: string): number => {
   if (!url.startsWith("data:")) return 0
@@ -103,7 +235,7 @@ export type InputState = {
   consumePendingPresetSubmit: () => string | null
   setPendingSyntheticParts: (parts: SyntheticContextPart[] | null) => void
   consumePendingSyntheticParts: () => SyntheticContextPart[] | null
-  addAttachedFile: (file: File) => Promise<void>
+  addAttachedFile: (file: File) => Promise<boolean>
   removeAttachedFile: (id: string) => void
   setAttachedFiles: (files: AttachedFile[]) => void
   clearAttachedFiles: () => void
@@ -154,23 +286,27 @@ export const useInputStore = create<InputState>()((set, get) => ({
   addAttachedFile: async (file: File) => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`
     const generation = attachmentReadGeneration
+    const resolvedMime = getAttachmentMime(file)
+    const mimeType = typeof resolvedMime === "string" ? resolvedMime : await resolvedMime
+    if (!mimeType) return false
     let dataUrl: string
     try {
-      dataUrl = await readFileAsDataUrl(file)
+      dataUrl = await readFileAsDataUrl(file, mimeType)
     } catch {
-      return
+      return false
     }
-    if (generation !== attachmentReadGeneration) return
+    if (!dataUrl || generation !== attachmentReadGeneration) return false
     const attached: AttachedFile = {
       id,
       file,
       dataUrl,
-      mimeType: file.type,
+      mimeType,
       filename: file.name,
       size: file.size,
       source: "local",
     }
     set((s) => ({ attachedFiles: [...s.attachedFiles, attached] }))
+    return true
   },
 
   removeAttachedFile: (id) =>
@@ -221,7 +357,7 @@ export const useInputStore = create<InputState>()((set, get) => ({
     pendingVSCodeSelectionKeys.add(selectionKey)
     let dataUrl: string
     try {
-      dataUrl = await readFileAsDataUrl(file)
+      dataUrl = await readFileAsDataUrl(file, file.type)
     } catch {
       return
     } finally {
