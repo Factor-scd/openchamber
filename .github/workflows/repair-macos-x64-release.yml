@@ -1,0 +1,207 @@
+name: Repair macOS x64 Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Existing release version without the v prefix
+        required: true
+        type: string
+      ref:
+        description: Source ref to package
+        required: true
+        type: string
+      manifest_run_id:
+        description: Release run containing the successful arm64 latest-mac.yml artifact
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  repair-macos-x64-release:
+    runs-on: macos-15-intel
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Verify requested version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          if [ "$PACKAGE_VERSION" != "$VERSION" ]; then
+            echo "Requested version $VERSION does not match package version $PACKAGE_VERSION"
+            exit 1
+          fi
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Get bundled OpenCode CLI version
+        id: opencode_cli_version
+        run: |
+          VERSION=$(node -p "require('./package.json').dependencies['@opencode-ai/sdk']")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Cache bundled OpenCode CLI artifact
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: packages/electron/.cache/opencode-cli
+          key: opencode-cli-${{ runner.os }}-x64-${{ steps.opencode_cli_version.outputs.version }}
+          restore-keys: |
+            opencode-cli-${{ runner.os }}-x64-
+
+      - name: Install Apple Certificate
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH=$RUNNER_TEMP/electron-signing.keychain-db
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+      - name: Build Electron app
+        working-directory: packages/electron
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ELECTRON_BUILDER_ARCH: x64
+        run: |
+          bun run build:web-assets
+          bun run prepare:opencode-cli
+          bun run verify:opencode-cli
+          bun run bundle:main
+          bun run rebuild:native
+          bunx electron-builder --mac --x64 --publish=never
+          bun run verify:opencode-cli:packaged
+
+      - name: Verify signature, entitlements, and notarization
+        run: |
+          set -euo pipefail
+
+          APP_PATH=$(find packages/electron/dist/mac -maxdepth 2 -name "*.app" -print -quit)
+          if [ -z "$APP_PATH" ]; then
+            echo "Error: x64 .app not found"
+            exit 1
+          fi
+
+          codesign -vv --deep --strict "$APP_PATH"
+          CS_INFO=$(codesign -dv --verbose=4 "$APP_PATH" 2>&1)
+          echo "$CS_INFO"
+          if ! echo "$CS_INFO" | grep -q "flags=.*runtime"; then
+            echo "Error: hardened runtime flag missing"
+            exit 1
+          fi
+          xcrun stapler validate "$APP_PATH"
+
+          ENTITLEMENTS=$(codesign -d --entitlements :- "$APP_PATH" 2>&1 || true)
+          if echo "$ENTITLEMENTS" | grep -q "com.apple.security.app-sandbox"; then
+            echo "Error: app sandbox entitlement is present"
+            exit 1
+          fi
+          for key in \
+            com.apple.security.cs.allow-jit \
+            com.apple.security.cs.allow-unsigned-executable-memory \
+            com.apple.security.cs.disable-library-validation
+          do
+            if ! echo "$ENTITLEMENTS" | grep -q "<key>$key</key>"; then
+              echo "Error: required entitlement missing: $key"
+              exit 1
+            fi
+          done
+
+      - name: Download arm64 update manifest
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: latest-yml-aarch64-apple-darwin
+          path: artifacts/latest-yml-aarch64-apple-darwin
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.manifest_run_id }}
+
+      - name: Finalize combined macOS update manifest
+        env:
+          LATEST_YML_DIR: ${{ github.workspace }}/artifacts
+          GH_REPO: ${{ github.repository }}
+          OPENCHAMBER_VERSION: ${{ inputs.version }}
+        run: |
+          mkdir -p artifacts/latest-yml-x86_64-apple-darwin
+          cp packages/electron/dist/latest-mac.yml artifacts/latest-yml-x86_64-apple-darwin/latest-mac.yml
+          node packages/electron/scripts/finalize-latest-yml.mjs
+          test -s "$RUNNER_TEMP/latest-mac.yml"
+
+      - name: Upload repaired macOS release files
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        with:
+          tag_name: v${{ inputs.version }}
+          draft: false
+          files: |
+            packages/electron/dist/OpenChamber-${{ inputs.version }}-mac-x64.dmg
+            packages/electron/dist/OpenChamber-${{ inputs.version }}-mac-x64.zip
+            packages/electron/dist/OpenChamber-${{ inputs.version }}-mac-x64.dmg.blockmap
+            packages/electron/dist/OpenChamber-${{ inputs.version }}-mac-x64.zip.blockmap
+            ${{ runner.temp }}/latest-mac.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify repaired release inventory
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          node - <<'NODE'
+          (async () => {
+            const { GITHUB_TOKEN: token, REPOSITORY: repo, VERSION: version } = process.env;
+            const expected = [
+              `OpenChamber-${version}-mac-arm64.dmg`,
+              `OpenChamber-${version}-mac-arm64.zip`,
+              `OpenChamber-${version}-mac-x64.dmg`,
+              `OpenChamber-${version}-mac-x64.zip`,
+              'latest-mac.yml',
+            ];
+            const response = await fetch(`https://api.github.com/repos/${repo}/releases/tags/v${version}`, {
+              headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' },
+            });
+            if (!response.ok) throw new Error(`Failed to inspect release: ${response.status} ${await response.text()}`);
+            const release = await response.json();
+            if (release.draft) throw new Error(`Release v${version} is still a draft`);
+            for (const name of expected) {
+              const matches = release.assets.filter((asset) => asset.name === name);
+              if (matches.length !== 1) throw new Error(`Expected exactly one ${name}, found ${matches.length}`);
+              if (!Number.isSafeInteger(matches[0].size) || matches[0].size <= 0) {
+                throw new Error(`Release asset ${name} has invalid size ${matches[0].size}`);
+              }
+            }
+            console.log(`Verified published v${version} with arm64, x64, and combined macOS update assets.`);
+          })().catch((error) => {
+            console.error(error);
+            process.exit(1);
+          });
+          NODE
