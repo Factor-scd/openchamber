@@ -4,10 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-- **Agents/CLI:** agents on managed local instances can now create, send to, fork, inspect, and wait for sessions; create isolated worktrees; and manage scheduled tasks through the OpenChamber tool. The CLI adds matching `session`, `schedule`, `projects`, and `models` commands, and a new Schedule a Task starter guides task setup from chat.
 - **Desktop/Linux:** official AppImage releases for x64 and arm64, with in-app updates from the GitHub release feed. Missing update manifests are treated as “no update” instead of a hard failure, and updater errors surface in About/sidebar (thanks to @jibanez-staticduo).
+- **Agents/CLI:** agents on managed local instances can now create, send to, fork, inspect, and wait for sessions; create isolated worktrees; and manage scheduled tasks through the OpenChamber tool. The CLI adds matching `session`, `schedule`, `projects`, and `models` commands, and a new Schedule a Task starter guides task setup from chat.
 - Desktop/Linux: frameless window controls, system tray minimize, launch at login via XDG autostart, multi-window support, and “Open in” for discovered installed apps (thanks to @jibanez-staticduo, @makeittech).
-- Desktop/Linux: fixed missing activity-based session sorting; chats now move in the list when they start or finish instead of repeatedly reordering while a response streams.
 - Small Model: GitHub Copilot models now use their supported API, fixing summaries, goal audits, commit messages, and other Small Model actions for models that do not support Chat Completions (thanks to @jakoss).
 - Chat: jumping to messages in long conversations now lands on the intended message when earlier rows have not been rendered yet.
 - Settings: added an option to hide starter suggestions on the new-session screen.
@@ -16,8 +15,7 @@ All notable changes to this project will be documented in this file.
 - Mobile/iOS: push notifications now use Apple’s production service by default (thanks to @natheihei).
 - Mobile/iOS: notifications now work for development builds installed from Xcode — the app detects its Apple push environment and the server delivers each device to the matching endpoint, so dev (sandbox) and TestFlight/App Store (production) installs both receive pushes.
 - Desktop: the window-controls position setting now lives under Appearance (thanks to @makeittech).
-- Usage: added Crof and NeuralWatt quota tracking with subscription kWh, independent key-allowance windows, and credits-balance fallback across the web server and VS Code extension.
-- Usage: Crof and NeuralWatt provider follow-up — fixed NeuralWatt allowance usage math (effectiveLimit now correctly accounts for spent credits), switched NeuralWatt windows to stable map keys with reused i18n labels, dropped dead `fetchCrofQuota`/`fetchNeuralwattQuota` re-exports, removed the speculative wall-clock `computeAllowanceResetAt` fallback (now trusts the API-provided `reset_at` or returns null, matching sibling providers), aligned display name to CrofAI, and ported payload-parsing tests to the VS Code runtime.
+- Usage: added Crof and NeuralWatt quota tracking with subscription kWh, independent key-allowance windows, and credits-balance fallback across the web server and VS Code extension (thanks to @kydorn).
 
 ## [1.16.3] - 2026-07-22
 
