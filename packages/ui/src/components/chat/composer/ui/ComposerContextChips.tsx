@@ -18,12 +18,14 @@ export interface ComposerContextChipsProps {
     /** Terminal selections, which show their own label and line range. */
     terminalDrafts: readonly InlineCommentDraft[];
     reviewCount: number;
+    prCommentCount: number;
+    prCheckCount: number;
     previewConsoleCount: number;
     previewAnnotationCount: number;
     draftTarget: InlineCommentDraftTarget | null;
     onRemoveDraft: (target: InlineCommentDraftTarget, draftId: string) => void;
     onRemoveReviewDrafts: () => void;
-    onRemovePreviewDrafts: (source: 'preview-console' | 'preview-annotation') => void;
+    onRemovePreviewDrafts: (source: 'preview-console' | 'preview-annotation' | 'pr-comment' | 'pr-check') => void;
     colors: Theme['colors'];
 }
 
@@ -34,6 +36,7 @@ function CountChip(props: {
     removeLabel: string;
     onRemove: () => void;
     colors: Theme['colors'];
+    icon?: React.ReactNode;
 }) {
     return (
         <div
@@ -43,6 +46,7 @@ function CountChip(props: {
                 borderColor: props.colors?.interactive?.border,
             }}
         >
+            {props.icon}
             <span className="text-xs font-medium text-muted-foreground">{props.label}</span>
             <span className="text-xs font-semibold" style={{ color: props.colors?.status?.info }}>
                 {props.count}
@@ -66,6 +70,8 @@ export function ComposerContextChips(props: ComposerContextChipsProps) {
     const {
         terminalDrafts,
         reviewCount,
+        prCommentCount,
+        prCheckCount,
         previewConsoleCount,
         previewAnnotationCount,
         draftTarget,
@@ -110,6 +116,28 @@ export function ComposerContextChips(props: ComposerContextChipsProps) {
                     removeLabel={t('chat.chatInput.reviewCommentsRemove')}
                     onRemove={onRemoveReviewDrafts}
                     colors={colors}
+                />
+            ) : null}
+
+            {prCommentCount > 0 ? (
+                <CountChip
+                    label={t('chat.chatInput.prCommentContext')}
+                    count={prCommentCount}
+                    removeLabel={t('chat.chatInput.prCommentContextRemove')}
+                    onRemove={() => onRemovePreviewDrafts('pr-comment')}
+                    colors={colors}
+                    icon={<Icon name="git-pull-request" className="h-3.5 w-3.5 text-muted-foreground" />}
+                />
+            ) : null}
+
+            {prCheckCount > 0 ? (
+                <CountChip
+                    label={t('chat.chatInput.prCheckContext')}
+                    count={prCheckCount}
+                    removeLabel={t('chat.chatInput.prCheckContextRemove')}
+                    onRemove={() => onRemovePreviewDrafts('pr-check')}
+                    colors={colors}
+                    icon={<Icon name="close-circle" className="h-3.5 w-3.5 text-[var(--status-error)]" />}
                 />
             ) : null}
 

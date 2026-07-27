@@ -703,13 +703,17 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                 let previewAnnotation = 0;
                 let review = 0;
                 let terminal = 0;
+                let prComment = 0;
+                let prCheck = 0;
                 for (const draft of drafts) {
                     if (draft.source === 'preview-console') previewConsole += 1;
                     else if (draft.source === 'preview-annotation') previewAnnotation += 1;
                     else if (draft.source === 'terminal') terminal += 1;
+                    else if (draft.source === 'pr-comment') prComment += 1;
+                    else if (draft.source === 'pr-check') prCheck += 1;
                     else review += 1;
                 }
-                return `${previewConsole}:${previewAnnotation}:${review}:${terminal}`;
+                return `${previewConsole}:${previewAnnotation}:${review}:${terminal}:${prComment}:${prCheck}`;
             },
             [inlineDraftKey]
         )
@@ -717,11 +721,11 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     const consumeDrafts = useInlineCommentDraftStore((state) => state.consumeDrafts);
     const removeInlineCommentDraft = useInlineCommentDraftStore((state) => state.removeDraft);
     const hasDrafts = draftCount > 0;
-    const [previewConsoleCount, previewAnnotationCount, reviewCount, terminalContextCount] = draftSourceKey.split(':').map((entry) => Number(entry) || 0);
+    const [previewConsoleCount, previewAnnotationCount, reviewCount, terminalContextCount, prCommentCount, prCheckCount] = draftSourceKey.split(':').map((entry) => Number(entry) || 0);
     const terminalContextDrafts = terminalContextCount > 0
         ? (inlineDraftKey ? useInlineCommentDraftStore.getState().drafts[inlineDraftKey] ?? [] : []).filter((draft) => draft.source === 'terminal')
         : [];
-    const removePreviewDrafts = React.useCallback((source: 'preview-console' | 'preview-annotation') => {
+    const removePreviewDrafts = React.useCallback((source: 'preview-console' | 'preview-annotation' | 'pr-comment' | 'pr-check') => {
         if (!inlineDraftTarget) return;
         const drafts = useInlineCommentDraftStore.getState().getDrafts(inlineDraftTarget);
         for (const draft of drafts) {
@@ -735,7 +739,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         if (!inlineDraftTarget) return;
         const drafts = useInlineCommentDraftStore.getState().getDrafts(inlineDraftTarget);
         for (const draft of drafts) {
-            if (draft.source !== 'preview-console' && draft.source !== 'preview-annotation' && draft.source !== 'terminal') {
+            if (draft.source !== 'preview-console' && draft.source !== 'preview-annotation' && draft.source !== 'terminal' && draft.source !== 'pr-comment' && draft.source !== 'pr-check') {
                 removeInlineCommentDraft(inlineDraftTarget, draft.id);
             }
         }
@@ -2375,6 +2379,8 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                     <ComposerContextChips
                         terminalDrafts={terminalContextDrafts}
                         reviewCount={reviewCount}
+                        prCommentCount={prCommentCount}
+                        prCheckCount={prCheckCount}
                         previewConsoleCount={previewConsoleCount}
                         previewAnnotationCount={previewAnnotationCount}
                         draftTarget={inlineDraftTarget}
