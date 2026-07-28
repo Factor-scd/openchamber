@@ -985,7 +985,7 @@ function SessionGroupSectionBase(props: Props): React.ReactNode {
               ) : (!group.isMain || group.worktree) ? (
                 // Worktree sub-header in the flat visual language: slim
                 // folder-style row with a PR-tinted branch icon and PR badge.
-                <span className="inline-flex min-w-0 max-w-full items-center gap-1.5">
+                <span className="flex w-full min-w-0 items-center gap-1.5">
                   <span className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center">
                     <Icon name="git-branch"
                       className={cn('h-3.5 w-3.5 shrink-0', !groupPrColor && 'text-muted-foreground', alwaysShowActions ? 'hidden' : 'group-hover/gh:hidden')}
@@ -1003,7 +1003,7 @@ function SessionGroupSectionBase(props: Props): React.ReactNode {
                   </span>
                   {groupPrSummary ? (
                     <span
-                      className="flex-shrink-0 text-[0.72rem] font-medium leading-none"
+                      className="ml-auto flex-shrink-0 text-[0.72rem] font-medium leading-none"
                       style={groupPrColor ? { color: groupPrColor } : undefined}
                     >
                       #{groupPrSummary.number}
