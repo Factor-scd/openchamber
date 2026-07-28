@@ -60,6 +60,7 @@
     "mobile:sim:install": "bun run --cwd packages/mobile sim:install",
     "mobile:sim:launch": "bun run --cwd packages/mobile sim:launch",
     "mobile:sim:run": "bun run --cwd packages/mobile sim:run",
+    "mobile:sim:dev": "bun run --cwd packages/mobile sim:dev",
     "mobile:sim:serve": "bun run --cwd packages/mobile sim:serve",
     "mobile:sim:list": "bun run --cwd packages/mobile sim:list",
     "mobile:sim:kill": "bun run --cwd packages/mobile sim:kill",
