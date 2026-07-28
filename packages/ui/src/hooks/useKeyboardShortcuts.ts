@@ -21,7 +21,7 @@ export const useKeyboardShortcuts = () => {
   const armAbortPrompt = useSessionUIStore((s) => s.armAbortPrompt);
   const clearAbortPrompt = useSessionUIStore((s) => s.clearAbortPrompt);
   const currentSessionId = useSessionUIStore((s) => s.currentSessionId);
-    const abortCurrentOperation = sessionActions.abortCurrentOperation;;
+  const abortCurrentOperation = sessionActions.abortCurrentOperation;
   const toggleCommandPalette = useUIStore((s) => s.toggleCommandPalette);
   const toggleHelpDialog = useUIStore((s) => s.toggleHelpDialog);
   const toggleSidebar = useUIStore((s) => s.toggleSidebar);
@@ -127,8 +127,93 @@ export const useKeyboardShortcuts = () => {
       }
     };
 
+    const handleEscapeKeyDownCapture = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+
+      const target = e.target as Element | null;
+      const isInsideDialog = Boolean(target?.closest('[role="dialog"]'));
+      const isSettingsMounted = Boolean(document.querySelector('[data-settings-view="true"]'));
+      const isInsideTerminal = isTerminalEventTarget(target);
+      const hasDropdownInteraction = isDropdownEventTarget(target) || hasOpenDropdown();
+
+      const {
+        isSettingsDialogOpen,
+        isCommandPaletteOpen,
+        isHelpDialogOpen,
+        isSessionSwitcherOpen,
+        isAboutDialogOpen,
+        isMultiRunLauncherOpen,
+        isImagePreviewOpen,
+        activeMainTab,
+        isPromptNavigatorPanelOpen,
+      } = useUIStore.getState();
+
+      if (isInsideDialog || isInsideTerminal || hasDropdownInteraction) {
+        resetAbortPriming();
+        return;
+      }
+
+      if (isPromptNavigatorPanelOpen) {
+        e.preventDefault();
+        setPromptNavigatorPanelOpen(false);
+        resetAbortPriming();
+        return;
+      }
+
+      if (isSettingsDialogOpen) {
+        e.preventDefault();
+        setSettingsDialogOpen(false);
+        resetAbortPriming();
+        return;
+      }
+
+      if (isSettingsMounted) {
+        resetAbortPriming();
+        return;
+      }
+
+      const hasOverlay = isCommandPaletteOpen || isHelpDialogOpen || isSessionSwitcherOpen || isAboutDialogOpen || isMultiRunLauncherOpen || isImagePreviewOpen;
+      const isChatActive = activeMainTab === 'chat';
+
+      if (hasOverlay || !isChatActive) {
+        resetAbortPriming();
+        return;
+      }
+
+      const sessionId = currentSessionId;
+      if (sessionPhase === 'idle' || !sessionId) {
+        resetAbortPriming();
+        return;
+      }
+
+      const now = Date.now();
+      const primedUntil = abortPrimedUntilRef.current;
+
+      if (primedUntil && now < primedUntil) {
+        e.preventDefault();
+        resetAbortPriming();
+        void abortCurrentOperation(sessionId);
+        return;
+      }
+
+      e.preventDefault();
+      const expiresAt = armAbortPrompt(3000) ?? now + 3000;
+      abortPrimedUntilRef.current = expiresAt;
+
+      if (abortPrimedTimeoutRef.current) {
+        clearTimeout(abortPrimedTimeoutRef.current);
+      }
+
+      const delay = Math.max(expiresAt - now, 0);
+      abortPrimedTimeoutRef.current = setTimeout(() => {
+        if (abortPrimedUntilRef.current && Date.now() >= abortPrimedUntilRef.current) {
+          resetAbortPriming();
+        }
+      }, delay || 0);
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (isTerminalEventTarget(e.target)) {
+      if (e.key === 'Escape' || isTerminalEventTarget(e.target)) {
         return;
       }
 
@@ -530,100 +615,15 @@ export const useKeyboardShortcuts = () => {
         return;
       }
 
-      if (e.key === 'Escape') {
-        const target = e.target as Element | null;
-        const isInsideDialog = Boolean(target?.closest('[role="dialog"]'));
-        const isSettingsMounted = Boolean(document.querySelector('[data-settings-view="true"]'));
-        const isInsideTerminal = isTerminalEventTarget(target);
-        const hasDropdownInteraction = isDropdownEventTarget(target) || hasOpenDropdown();
-
-        const {
-          isSettingsDialogOpen,
-          isCommandPaletteOpen,
-          isHelpDialogOpen,
-          isSessionSwitcherOpen,
-          isAboutDialogOpen,
-          isMultiRunLauncherOpen,
-          isImagePreviewOpen,
-          activeMainTab,
-          isPromptNavigatorPanelOpen,
-        } = useUIStore.getState();
-
-        if (isInsideDialog || isInsideTerminal || hasDropdownInteraction) {
-          resetAbortPriming();
-          return;
-        }
-
-        if (isPromptNavigatorPanelOpen) {
-          e.preventDefault();
-          setPromptNavigatorPanelOpen(false);
-          resetAbortPriming();
-          return;
-        }
-
-        // If settings is open, close it
-        if (isSettingsDialogOpen) {
-          e.preventDefault();
-          setSettingsDialogOpen(false);
-          resetAbortPriming();
-          return;
-        }
-
-        if (isSettingsMounted) {
-          resetAbortPriming();
-          return;
-        }
-
-        // Check if any overlay is open or not on chat tab - don't process abort
-        const hasOverlay = isCommandPaletteOpen || isHelpDialogOpen || isSessionSwitcherOpen || isAboutDialogOpen || isMultiRunLauncherOpen || isImagePreviewOpen;
-        const isChatActive = activeMainTab === 'chat';
-
-        if (hasOverlay || !isChatActive) {
-          resetAbortPriming();
-          return;
-        }
-
-        // Double-ESC abort logic - only when on chat tab with no overlays
-        const sessionId = currentSessionId;
-        const canAbortNow = sessionPhase !== 'idle' && Boolean(sessionId);
-        if (!canAbortNow) {
-          resetAbortPriming();
-          return;
-        }
-
-        const now = Date.now();
-        const primedUntil = abortPrimedUntilRef.current;
-
-        if (primedUntil && now < primedUntil) {
-          e.preventDefault();
-          resetAbortPriming();
-          void abortCurrentOperation(sessionId ?? '');
-          return;
-        }
-
-        e.preventDefault();
-        const expiresAt = armAbortPrompt(3000) ?? now + 3000;
-        abortPrimedUntilRef.current = expiresAt;
-
-        if (abortPrimedTimeoutRef.current) {
-          clearTimeout(abortPrimedTimeoutRef.current);
-        }
-
-        const delay = Math.max(expiresAt - now, 0);
-        abortPrimedTimeoutRef.current = setTimeout(() => {
-          if (abortPrimedUntilRef.current && Date.now() >= abortPrimedUntilRef.current) {
-            resetAbortPriming();
-          }
-        }, delay || 0);
-        return;
-      }
     };
 
     window.addEventListener('keydown', handleTerminalShortcutCapture, true);
+    window.addEventListener('keydown', handleEscapeKeyDownCapture, true);
     window.addEventListener('keydown', handleKeyDown);
 
     return () => {
       window.removeEventListener('keydown', handleTerminalShortcutCapture, true);
+      window.removeEventListener('keydown', handleEscapeKeyDownCapture, true);
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [
