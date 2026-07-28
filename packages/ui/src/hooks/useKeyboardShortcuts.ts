@@ -15,6 +15,7 @@ import { readEmbeddedThemeSearchParams } from '@/contexts/theme-embedded-bootstr
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { getCycledPrimaryAgentName } from '@/components/chat/mobileControlsUtils';
+import { focusChatInput } from '@/components/chat/composer/editor/dom';
 
 export const useKeyboardShortcuts = () => {
   const openNewSessionDraft = useSessionUIStore((s) => s.openNewSessionDraft);
@@ -218,7 +219,7 @@ export const useKeyboardShortcuts = () => {
       }
 
       const isChatInputTarget = (target: EventTarget | null) => {
-        return target instanceof HTMLTextAreaElement && target.getAttribute('data-chat-input') === 'true';
+        return target instanceof Element && Boolean(target.closest('[data-chat-input="true"]'));
       };
 
       if (eventMatchesShortcut(e, combo('open_command_palette'))) {
@@ -355,8 +356,7 @@ export const useKeyboardShortcuts = () => {
 
       if (eventMatchesShortcut(e, combo('focus_input'))) {
         e.preventDefault();
-        const textarea = document.querySelector<HTMLTextAreaElement>('textarea[data-chat-input="true"]');
-        textarea?.focus();
+        focusChatInput();
         return;
       }
 
