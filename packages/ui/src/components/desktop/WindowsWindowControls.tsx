@@ -16,24 +16,24 @@ const TRAFFIC_LIGHT_COLORS: Record<DesktopWindowControlAction, { fill: string; g
   maximize: { fill: '#28C940', glyph: '#006200' },
 };
 
-const TrafficLightGlyph: React.FC<{ action: DesktopWindowControlAction }> = ({ action }) => {
+const TrafficLightGlyph: React.FC<{ action: DesktopWindowControlAction; isMaximized: boolean }> = ({ action, isMaximized }) => {
   if (action === 'close') {
-    return (
-      <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" className="size-[9px]" aria-hidden>
-        <path d="M3.5 3.5 L8.5 8.5 M8.5 3.5 L3.5 8.5" />
-      </svg>
-    );
+    return <Icon name="close" className="size-[10px]" />;
   }
   if (action === 'minimize') {
-    return (
-      <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.4} strokeLinecap="round" className="size-[9px]" aria-hidden>
-        <path d="M3 6 L9 6" />
-      </svg>
-    );
+    return <Icon name="subtract" className="size-[10px]" />;
   }
-  // Green expand: two paired corner triangles pointing diagonally outward.
-  return (
-    <svg viewBox="0 0 12 12" fill="currentColor" className="size-[9px]" aria-hidden>
+  // Green expand: two filled corner triangles pointing outward (maximize)
+  // or inward (restore). No Remixicon equivalent exists.
+  // Glyphs are 10px inside the 14px circle on purpose: 9px left a half-pixel
+  // (2.5px) padding that rasterized lopsided at 1x DPR.
+  return isMaximized ? (
+    <svg viewBox="0 0 12 12" fill="currentColor" className="size-[10px]" aria-hidden>
+      <path d="M5.25 6.75 L9.75 6.75 L9.75 2.25 Z" />
+      <path d="M6.75 5.25 L2.25 5.25 L2.25 9.75 Z" />
+    </svg>
+  ) : (
+    <svg viewBox="0 0 12 12" fill="currentColor" className="size-[10px]" aria-hidden>
       <path d="M5.25 2.25 L9.75 2.25 L9.75 6.75 Z" />
       <path d="M6.75 9.75 L2.25 9.75 L2.25 5.25 Z" />
     </svg>
@@ -72,8 +72,8 @@ const TrafficLightButton: React.FC<TrafficLightButtonProps> = ({ action, isMaxim
         className="flex size-3.5 items-center justify-center rounded-full shadow-[inset_0_0_0_0.5px_rgba(0,0,0,0.28)] transition-[filter] duration-75 active:brightness-90"
         style={{ backgroundColor: fill, color: glyph }}
       >
-        <span className="flex opacity-0 transition-opacity duration-75 group-hover/wctl:opacity-100">
-          <TrafficLightGlyph action={action} />
+        <span className="flex items-center justify-center opacity-0 transition-opacity duration-75 group-hover/wctl:opacity-100">
+          <TrafficLightGlyph action={action} isMaximized={isMaximized} />
         </span>
       </span>
     </button>

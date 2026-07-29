@@ -751,10 +751,6 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
         const option = MOBILE_KEYBOARD_MODE_OPTIONS.find((item) => item.id === mobileKeyboardMode);
         return option ? tUnsafe(option.labelKey) : undefined;
     }, [mobileKeyboardMode, tUnsafe]);
-    const selectedWindowControlsStyleLabel = React.useMemo(() => {
-        const option = WINDOW_CONTROLS_STYLE_OPTIONS.find((item) => item.id === desktopWindowControlsStyle);
-        return option ? tUnsafe(option.labelKey) : undefined;
-    }, [desktopWindowControlsStyle, tUnsafe]);
 
     const handleMobileLayoutPreferenceChange = React.useCallback((value: MobileLayoutPreference) => {
         if (value === mobileLayoutPreference) {
@@ -1028,7 +1024,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                         {showWindowControlsPositionSetting && (
                             <SettingsSection
                                 title={t('settings.openchamber.desktopNetwork.field.windowControls')}
-                                info={t('settings.openchamber.desktopNetwork.field.windowControlsDescription')}
+                                info={t('settings.openchamber.desktopNetwork.field.windowControlsPositionDescription')}
                                 divider={hasThemeSettings}
                             >
                                 <SettingsTwoColumn>
@@ -1050,16 +1046,15 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                         label={t('settings.openchamber.desktopNetwork.field.windowControlsStyle')}
                                         settingsItem="sessions.desktop-window-controls-style"
                                     >
-                                        <Select value={desktopWindowControlsStyle} onValueChange={(value: DesktopWindowControlsStyle) => handleWindowControlsStyleChange(value)}>
-                                            <SelectTrigger aria-label={t('settings.openchamber.desktopNetwork.field.windowControlsStyleAria')} size={SETTINGS_SELECT_SIZE} className={SETTINGS_SELECT_TRIGGER_CLASS}>
-                                                <SelectValue>{selectedWindowControlsStyleLabel}</SelectValue>
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {WINDOW_CONTROLS_STYLE_OPTIONS.map((option) => (
-                                                    <SelectItem key={option.id} value={option.id}>{tUnsafe(option.labelKey)}</SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
+                                        <SettingsChipGroup
+                                            value={desktopWindowControlsStyle}
+                                            options={WINDOW_CONTROLS_STYLE_OPTIONS.map((option) => ({
+                                                value: option.id,
+                                                label: tUnsafe(option.labelKey),
+                                            }))}
+                                            onChange={handleWindowControlsStyleChange}
+                                            aria-label={t('settings.openchamber.desktopNetwork.field.windowControlsStyleAria')}
+                                        />
                                     </SettingsStackedField>
                                 </SettingsTwoColumn>
                             </SettingsSection>

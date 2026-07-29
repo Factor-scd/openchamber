@@ -300,37 +300,6 @@ export const hasDesktopInvoke = (): boolean => {
   return typeof getDesktopBridge()?.invoke === 'function';
 };
 
-/**
- * Linux frameless Electron windows show a 1px CSS border on #root (see
- * index.css). This function flips the attribute on <html> so the rule
- * matches, and tracks `data-oc-window-maximized` so the border drops when
- * maximized (a 1px line inset from every screen edge would look off).
- * No-op outside Linux frameless Electron.
- */
-export const initLinuxWindowBorder = (): void => {
-  if (typeof window === 'undefined' || typeof document === 'undefined') return;
-  if (!usesFramelessElectronChrome()) return;
-  const platform = getElectronPlatform();
-  if (platform !== 'linux') return;
-
-  const root = document.documentElement;
-  root.setAttribute('data-oc-window-border', '');
-
-  const applyMaximized = (maximized: boolean) => {
-    root.toggleAttribute('data-oc-window-maximized', maximized);
-  };
-
-  void invokeDesktop<{ maximized?: boolean }>('desktop_get_current_window_state')
-    .then((state) => applyMaximized(Boolean(state?.maximized)))
-    .catch(() => {});
-
-  const onMaximizedChange = (event: Event) => {
-    const detail = (event as CustomEvent<{ maximized?: boolean }>).detail;
-    applyMaximized(Boolean(detail?.maximized));
-  };
-  window.addEventListener('openchamber:window-maximized-changed', onMaximizedChange);
-};
-
 export const canUseElectronDesktopIPC = (): boolean => isElectronShell() && hasDesktopInvoke();
 
 export const invokeDesktop = async <T = unknown>(command: string, args?: Record<string, unknown>): Promise<T | null> => {

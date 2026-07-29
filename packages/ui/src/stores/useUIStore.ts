@@ -2254,7 +2254,7 @@ export const useUIStore = create<UIStore>()(
       {
         name: 'ui-store',
         storage: createDeferredSafeJSONStorage(),
-        version: 13,
+        version: 12,
         migrate: (persistedState, version) => {
           if (!persistedState || typeof persistedState !== 'object') {
             return persistedState;
@@ -2265,15 +2265,6 @@ export const useUIStore = create<UIStore>()(
           if (version < 12) {
             if (state.desktopWindowControlsPosition === 'auto' || state.desktopWindowControlsPosition == null) {
               state.desktopWindowControlsPosition = 'right';
-            }
-          }
-
-          // v12 -> v13: introduce window-controls style. Existing users keep
-          // their persisted position; style defaults to "classic" so no one
-          // suddenly sees traffic lights on upgrade.
-          if (version < 13) {
-            if (state.desktopWindowControlsStyle !== 'classic' && state.desktopWindowControlsStyle !== 'traffic-lights') {
-              state.desktopWindowControlsStyle = 'classic';
             }
           }
 

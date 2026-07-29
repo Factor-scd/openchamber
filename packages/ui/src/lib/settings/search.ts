@@ -399,9 +399,9 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
   {
     id: 'sessions.desktop-window-controls-position',
     page: 'appearance',
-    titleKey: 'settings.openchamber.desktopNetwork.field.windowControls',
-    descriptionKey: 'settings.openchamber.desktopNetwork.field.windowControlsDescription',
-    keywords: ['desktop', 'window', 'controls', 'minimize', 'maximize', 'close', 'titlebar', 'linux', 'windows', 'position'],
+    titleKey: 'settings.openchamber.desktopNetwork.field.windowControlsPosition',
+    descriptionKey: 'settings.openchamber.desktopNetwork.field.windowControlsPositionDescription',
+    keywords: ['desktop', 'window', 'controls', 'minimize', 'maximize', 'close', 'titlebar', 'linux', 'windows'],
     isAvailable: (ctx) => ctx.isDesktop && (ctx.isWindows || !ctx.isMac),
   },
   {
