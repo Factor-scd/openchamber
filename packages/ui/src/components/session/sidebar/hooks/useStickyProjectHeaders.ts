@@ -12,6 +12,14 @@ export const useStickyProjectHeaders = (args: Args): Set<string> => {
   const [stuckProjectHeaders, setStuckProjectHeaders] = React.useState<Set<string>>(new Set());
 
   React.useEffect(() => {
+    if (enabled && isDesktopShellRuntime) {
+      return;
+    }
+
+    setStuckProjectHeaders((prev) => (prev.size === 0 ? prev : new Set()));
+  }, [enabled, isDesktopShellRuntime]);
+
+  React.useEffect(() => {
     if (!enabled || !isDesktopShellRuntime) {
       return;
     }
