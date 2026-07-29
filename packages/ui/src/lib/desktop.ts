@@ -41,6 +41,7 @@ export type SkillCatalogConfig = {
 export type DesktopWindowControlsPosition = 'left' | 'right';
 export type DesktopWindowControlsSide = 'left' | 'right';
 export type DesktopWindowControlAction = 'close' | 'minimize' | 'maximize';
+// No fixed-width constant: control width depends on the style (classic vs traffic-lights).
 export type DesktopWindowControlsStyle = 'classic' | 'traffic-lights';
 
 export type DesktopSettings = {
