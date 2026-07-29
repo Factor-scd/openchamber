@@ -10,11 +10,14 @@ import { useUIStore } from '@/stores/useUIStore';
 // macOS chrome colors; intentionally theme-independent — these replicate a
 // foreign platform's chrome, not OpenChamber's own status tokens, so the
 // theme-system hex rule does not apply.
-const TRAFFIC_LIGHT_COLORS: Record<DesktopWindowControlAction, { fill: string; glyph: string }> = {
-  close: { fill: '#FF5F57', glyph: '#7F0808' },
-  minimize: { fill: '#FEBC2E', glyph: '#B3710C' },
-  maximize: { fill: '#28C940', glyph: '#006200' },
+const TRAFFIC_LIGHT_FILL: Record<DesktopWindowControlAction, string> = {
+  close: '#FF5F57',
+  minimize: '#FEBC2E',
+  maximize: '#28C940',
 };
+// Glyphs are a uniform translucent black, matching macOS — opacity lets the
+// fill tint the symbol so it reads on all three fills without per-action colors.
+const TRAFFIC_LIGHT_GLYPH = 'rgba(0, 0, 0, 0.7)';
 
 const TrafficLightGlyph: React.FC<{ action: DesktopWindowControlAction }> = ({ action }) => {
   if (action === 'close') {
@@ -36,7 +39,7 @@ type TrafficLightButtonProps = {
 
 const TrafficLightButton: React.FC<TrafficLightButtonProps> = ({ action, isMaximized, onActivate }) => {
   const { t } = useI18n();
-  const { fill, glyph } = TRAFFIC_LIGHT_COLORS[action];
+  const fill = TRAFFIC_LIGHT_FILL[action];
   const label =
     action === 'close'
       ? t('header.windowControls.close')
@@ -58,7 +61,7 @@ const TrafficLightButton: React.FC<TrafficLightButtonProps> = ({ action, isMaxim
     >
       <span
         className="flex size-3.5 items-center justify-center rounded-full shadow-[inset_0_0_0_0.5px_rgba(0,0,0,0.28)] transition-[filter] duration-75 active:brightness-90"
-        style={{ backgroundColor: fill, color: glyph }}
+        style={{ backgroundColor: fill, color: TRAFFIC_LIGHT_GLYPH }}
       >
         <span className="flex items-center justify-center opacity-0 transition-opacity duration-75 group-hover/wctl:opacity-100">
           <TrafficLightGlyph action={action} />
