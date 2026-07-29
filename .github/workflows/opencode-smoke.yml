@@ -12,7 +12,7 @@ on:
       model:
         description: Model in provider/model format
         required: true
-        default: zai-coding-plan/glm-5.2
+        default: opencode-go/deepseek-v4-flash
         type: string
       opencode_version:
         description: OpenCode version, with or without a leading v, or latest
@@ -92,7 +92,6 @@ jobs:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
           PROMPT: ${{ inputs.prompt }}
           SMOKE_TIMEOUT_MINUTES: ${{ inputs.timeout_minutes }}
-          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
         run: |
           started_epoch="$(date +%s)"
           installed_version="$(opencode --version)"

@@ -1,7 +1,7 @@
 ---
 mode: primary
 hidden: true
-model: zai-coding-plan/glm-5.2
+model: opencode-go/deepseek-v4-flash
 color: "#5b7cfa"
 permission:
   edit: deny

@@ -246,7 +246,7 @@ jobs:
         id: review-run
         env:
           REVIEW_TIMEOUT: 30m
-          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           PR_URL: ${{ steps.pr.outputs.url }}
