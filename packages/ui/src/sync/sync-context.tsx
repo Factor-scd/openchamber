@@ -53,6 +53,7 @@ import type { QuestionRequest } from "@/types/question"
 import {
   getSessionMaterializationRequestKey,
   getSessionMaterializationStatus,
+  getStaleRunningToolMessageID,
   isSessionMaterializationStillNeeded,
   type SessionMaterializationRequest,
 } from "./materialization"
@@ -284,7 +285,11 @@ function enqueueSessionMaterialization(
   const runtimeKey = getRuntimeKey()
   const k = getSessionMaterializationRequestKey(runtimeKey, directory, sessionID)
   const existing = pendingSessionMaterializations.get(k)
-  if (existing && Date.now() - existing.enqueuedAt < SESSION_MATERIALIZATION_COOLDOWN_MS) return
+  if (existing && Date.now() - existing.enqueuedAt < SESSION_MATERIALIZATION_COOLDOWN_MS) {
+    const settlementMustFollowEarlierRecovery = request.reason === "settled-running-tool"
+      && existing.request.reason !== "settled-running-tool"
+    if (!settlementMustFollowEarlierRecovery) return
+  }
 
   const pending = { runtimeKey, sessionID, directory, enqueuedAt: Date.now(), request }
   pendingSessionMaterializations.set(k, pending)
@@ -1724,6 +1729,18 @@ function handleEvent(
         reason: materializationResult.reason,
         messageID: materializationResult.messageID,
         partID: materializationResult.partID,
+      })
+    }
+  }
+
+  if (payload.type === "session.idle" || payload.type === "session.error") {
+    const sessionID = getSessionIdFromPayload(payload) ?? undefined
+    const state = getDirectoryEventState(store, batch)
+    const messageID = sessionID ? getStaleRunningToolMessageID(state, sessionID) : undefined
+    if (sessionID && messageID) {
+      enqueueSessionMaterialization(resolvedDirectory, sessionID, childStores, {
+        reason: "settled-running-tool",
+        messageID,
       })
     }
   }
