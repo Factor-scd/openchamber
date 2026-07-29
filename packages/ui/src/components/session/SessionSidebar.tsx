@@ -1705,9 +1705,10 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
         openSidebarMenuKey={openSidebarMenuKey}
         expansionState={recentExpandedParents}
         variant="section"
+        isDesktopShellRuntime={isDesktopShellRuntime}
       />
     ) : null,
-    [activitySections, editingId, hasSessionSearchQuery, isVSCode, openSidebarMenuKey, recentExpandedParents, renderSessionNode, showRecentSection],
+    [activitySections, editingId, hasSessionSearchQuery, isDesktopShellRuntime, isVSCode, openSidebarMenuKey, recentExpandedParents, renderSessionNode, showRecentSection],
   );
   const isInlineEditing = Boolean(renamingFolderId || editingId || editingProjectDialogId);
 
