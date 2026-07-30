@@ -71,4 +71,68 @@ describe("content cache owner", () => {
     expect(second.content).toBe("/b-2")
     owner.dispose()
   })
+
+  test("disposed owners still read through without throwing", async () => {
+    let reads = 0
+    const owner = createContentCachedFiles({
+      readFile: async (path: string) => ({ path, content: `value-${++reads}` }),
+      statFile: async () => ({ isFile: true, isDirectory: false, size: 7, mtimeMs: 1 }),
+    } as unknown as FilesAPI)
+
+    owner.dispose()
+    expect((await owner.files.readFile!("notes.txt", { optional: true, directory: "/tmp/project" })).content).toBe("value-1")
+    expect(reads).toBe(1)
+  })
+
+  test("validateContextFileOpen succeeds against a disposed cached files API", async () => {
+    const { validateContextFileOpen } = await import("@/lib/contextFileOpenGuard")
+    const owner = createContentCachedFiles({
+      listDirectory: async () => ({ directory: "/", entries: [] }),
+      readFile: async (path: string) => ({ path, content: "hello from notes\n" }),
+    } as unknown as FilesAPI)
+
+    owner.dispose()
+    expect(await validateContextFileOpen(owner.files, "/tmp/project/notes.txt", { directory: "/tmp/project" })).toEqual({
+      ok: true,
+    })
+  })
+
+  test("runtime endpoint changes clear cache but keep serving reads", async () => {
+    const originalWindow = globalThis.window
+    const events = new EventTarget()
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: {
+        addEventListener: events.addEventListener.bind(events),
+        removeEventListener: events.removeEventListener.bind(events),
+        dispatchEvent: events.dispatchEvent.bind(events),
+      },
+    })
+
+    try {
+      let reads = 0
+      const owner = createContentCachedFiles({
+        readFile: async (path: string) => ({ path, content: `value-${++reads}` }),
+        statFile: async () => ({ isFile: true, isDirectory: false, size: 7, mtimeMs: 1 }),
+      } as unknown as FilesAPI)
+
+      expect((await owner.files.readFile!("notes.txt")).content).toBe("value-1")
+      window.dispatchEvent(new CustomEvent("openchamber:runtime-endpoint-will-change", {
+        detail: {
+          apiBaseUrl: "http://127.0.0.1:3902",
+          previousApiBaseUrl: "http://127.0.0.1:3901",
+          runtimeKey: "url:http://127.0.0.1:3902",
+          previousRuntimeKey: "url:http://127.0.0.1:3901",
+        },
+      }))
+      expect((await owner.files.readFile!("notes.txt")).content).toBe("value-2")
+      expect(reads).toBe(2)
+      owner.dispose()
+    } finally {
+      Object.defineProperty(globalThis, "window", {
+        configurable: true,
+        value: originalWindow,
+      })
+    }
+  })
 })

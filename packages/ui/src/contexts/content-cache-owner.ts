@@ -32,6 +32,10 @@ export function createContentCachedFiles(files: FilesAPI): { files: FilesAPI; di
     && cached.mtimeMs === latest.mtimeMs
     && cached.size === latest.size
   );
+  const clearCache = () => {
+    cache.clear();
+    totalBytes = 0;
+  };
   const cacheResult = (
     key: string,
     sourcePath: string,
@@ -61,7 +65,8 @@ export function createContentCachedFiles(files: FilesAPI): { files: FilesAPI; di
     const before = await files.statFile?.(path, options).catch(() => null);
     const result = await files.readFile!(path, options);
     const after = await files.statFile?.(path, options).catch(() => null);
-    if (!active) throw new Error('File read invalidated by runtime change');
+    // Disposed mid-read: still return the bytes we fetched; do not cache.
+    if (!active) return result;
     if (capturedGeneration !== generation) return cachedReadFile!(path, options);
     const stable = before && after && before.isFile && after.isFile
       && before.mtimeMs !== undefined && after.mtimeMs !== undefined
@@ -72,14 +77,17 @@ export function createContentCachedFiles(files: FilesAPI): { files: FilesAPI; di
   const cachedReadFile: FilesAPI['readFile'] = files.readFile
     ? async (path, options) => {
         await mutationBarrier;
-        if (!active) throw new Error('File cache owner disposed');
+        // Disposed owners must keep serving reads. React Strict Mode can dispose a
+        // memoized owner that the provider still holds; throwing here surfaces as
+        // "Failed to open file" with no /api/fs/read request for text opens.
+        if (!active) return files.readFile!(path, options);
         const capturedGeneration = generation;
         if (options?.allowOutsideWorkspace) return files.readFile!(path, options);
         const key = cacheKey(path, options);
         const hit = cache.get(key);
         if (!hit) return readFresh(key, path, options, capturedGeneration);
         const latest = await files.statFile?.(path, options).catch(() => null);
-        if (!active) throw new Error('File read invalidated by runtime change');
+        if (!active) return files.readFile!(path, options);
         if (capturedGeneration !== generation) return cachedReadFile!(path, options);
         if (!latest || !metadataMatches(hit, latest)) {
           removeEntry(key);
@@ -116,18 +124,18 @@ export function createContentCachedFiles(files: FilesAPI): { files: FilesAPI; di
   };
   const unsubscribeRuntime = subscribeRuntimeEndpointWillChange((detail) => {
     if (detail.runtimeKey === detail.previousRuntimeKey) return;
-    active = false;
+    // Invalidate cached content for the previous runtime, but keep serving reads.
+    // `apis.files` is typically stable across endpoint switches, so permanently
+    // deactivating this owner would break every subsequent text-file open.
     generation += 1;
-    cache.clear();
-    totalBytes = 0;
+    clearCache();
   });
   return {
     files: cachedFiles,
     dispose: () => {
       active = false;
       generation += 1;
-      cache.clear();
-      totalBytes = 0;
+      clearCache();
       unsubscribeRuntime();
     },
   };
