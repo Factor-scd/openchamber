@@ -98,7 +98,6 @@ type Props = {
 function SidebarProjectsListComponent(props: Props): React.ReactNode {
   streamPerfCount('ui.sidebar_projects_list.render');
   const { t } = useI18n();
-  const [hasTopScroll, setHasTopScroll] = React.useState(false);
   const enableStickyFade = props.isDesktopShellRuntime && props.stickyZoneHeaders;
   const projectSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -152,7 +151,6 @@ function SidebarProjectsListComponent(props: Props): React.ReactNode {
       '--scroll-shadow-top-clear-size',
       `${Math.min(Math.max(topFadeSize - 8, 0), TOP_FADE_CLEAR_MAX_SIZE)}px`,
     );
-    setHasTopScroll((prev) => (prev === hasTopScroll ? prev : hasTopScroll));
   }, []);
   const blockObscuredInteraction = React.useCallback((
     event: React.MouseEvent<HTMLDivElement> | React.PointerEvent<HTMLDivElement>,
@@ -175,7 +173,15 @@ function SidebarProjectsListComponent(props: Props): React.ReactNode {
       stuckProject = section.project;
     }
   }
-  const stickyProjectLabel = stuckProject ? getProjectLabel(stuckProject, props.homeDirectory) : null;
+  // The IntersectionObserver reports the stuck header asynchronously, a frame or
+  // two after the (synchronous) mask has already hidden the real header — which
+  // otherwise leaves a one-frame gap where the title blinks out with no crisp
+  // replacement. Seed the overlay with the topmost rendered project so it is
+  // ready in the same frame; the observer then corrects it. When shared sessions
+  // lead the list, the Recent fallback below owns the top instead of a project.
+  const leadingProject =
+    stuckProject ?? (props.hasSharedSessions ? null : props.sectionsForRender[0]?.project ?? null);
+  const leadingProjectLabel = leadingProject ? getProjectLabel(leadingProject, props.homeDirectory) : null;
 
   if (props.sharedSessionsOnly) {
     return (
@@ -201,7 +207,7 @@ function SidebarProjectsListComponent(props: Props): React.ReactNode {
     // like they insert upward. With anchoring off, scrollTop stays put and new
     // rows appear below naturally.
     <div
-      className="relative flex min-h-0 flex-1"
+      className="oc-sticky-fade-root relative flex min-h-0 flex-1"
       onPointerDownCapture={enableStickyFade ? blockObscuredInteraction : undefined}
       onClickCapture={enableStickyFade ? blockObscuredInteraction : undefined}
       onContextMenuCapture={enableStickyFade ? blockObscuredInteraction : undefined}
@@ -371,19 +377,19 @@ function SidebarProjectsListComponent(props: Props): React.ReactNode {
         </DndContext>
       )}
     </ScrollableOverlay>
-      {enableStickyFade && hasTopScroll && (stuckProject || props.hasSharedSessions) ? (
+      {enableStickyFade && (leadingProject || props.hasSharedSessions) ? (
         <div
-          className="pointer-events-none absolute inset-x-0 top-0 z-30 flex h-7 items-center gap-1.5 pl-4 pr-5"
+          className="oc-sticky-fade-overlay pointer-events-none absolute inset-x-0 top-0 z-30 flex items-center gap-1.5 py-1 pl-4 pr-5"
           aria-hidden="true"
         >
-          {stuckProject && stickyProjectLabel ? (
+          {leadingProject && leadingProjectLabel ? (
             <ProjectHeaderIdentity
-              id={stuckProject.id}
-              projectLabel={stickyProjectLabel}
-              projectIcon={stuckProject.icon}
-              projectColor={stuckProject.color}
-              projectIconImage={stuckProject.iconImage}
-              projectIconBackground={stuckProject.iconBackground}
+              id={leadingProject.id}
+              projectLabel={leadingProjectLabel}
+              projectIcon={leadingProject.icon}
+              projectColor={leadingProject.color}
+              projectIconImage={leadingProject.iconImage}
+              projectIconBackground={leadingProject.iconBackground}
             />
           ) : (
             <>
