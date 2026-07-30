@@ -161,6 +161,18 @@ export class SessionMessageLoader {
     }
   }
 
+  /**
+   * Re-enable a loader which was disposed by a transient React effect cleanup.
+   *
+   * React Strict Mode runs effect setup, cleanup, then setup again in
+   * development. The provider owns one ref-stable loader across that sequence,
+   * so the second setup must be able to accept new work after the first cleanup
+   * invalidated its in-flight requests.
+   */
+  activate(): void {
+    this.disposed = false
+  }
+
   ensure(
     target: SessionMessageTarget,
     options?: { force?: boolean; reason?: "navigation" | "reactive" | "prefetch" },
