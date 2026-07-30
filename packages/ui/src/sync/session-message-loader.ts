@@ -98,7 +98,10 @@ const assertSdkSuccess = (result: {
 }, operation: string): void => {
   if (!result.error) return
   const status = result.response?.status
-  throw new Error(`${operation} failed${status ? ` (${status})` : ""}: ${formatSdkError(result.error)}`)
+  const message = `${operation} failed${status ? ` (${status})` : ""}: ${formatSdkError(result.error)}`
+  const error = new Error(message) as Error & { status?: number }
+  if (status !== undefined) error.status = status
+  throw error
 }
 
 const sortParts = (parts: Part[]): Part[] => parts

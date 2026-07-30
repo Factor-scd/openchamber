@@ -861,6 +861,16 @@ const buildVersionUrl = (url) => {
   }
 };
 
+const buildSessionStatusUrl = (url) => {
+  try {
+    const parsed = new URL(url);
+    parsed.pathname = `${parsed.pathname.replace(/\/$/, '') || ''}/auth/session`;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+};
+
 const classifyVersionPayload = (payload) => {
   const compatibility = payload?.compatibility;
   if (!payload || payload.status !== 'ok' || !compatibility || typeof compatibility !== 'object') {
@@ -895,7 +905,8 @@ const fetchVersionPayload = async (versionUrl, { headers, timeoutMs }) => {
 
 const probeHostWithTimeout = async (url, timeoutMs, clientToken = '', requestHeaders = {}, expectedServerId = '') => {
   const versionUrl = buildVersionUrl(url);
-  if (!versionUrl) {
+  const sessionStatusUrl = buildSessionStatusUrl(url);
+  if (!versionUrl || !sessionStatusUrl) {
     throw new Error('Invalid URL');
   }
 
@@ -939,8 +950,19 @@ const probeHostWithTimeout = async (url, timeoutMs, clientToken = '', requestHea
       return { status: 'unreachable', latencyMs: Date.now() - started };
     }
     const payload = await response.json().catch(() => null);
+    const versionStatus = classifyVersionPayload(payload);
+    if (versionStatus !== 'ok') {
+      return { status: versionStatus, latencyMs: Date.now() - started };
+    }
+    const sessionResponse = await fetchVersionPayload(sessionStatusUrl, { headers, timeoutMs });
+    if (sessionResponse.status === 401 || sessionResponse.status === 403) {
+      return { status: 'auth', latencyMs: Date.now() - started };
+    }
+    if (!sessionResponse.ok) {
+      return { status: 'unreachable', latencyMs: Date.now() - started };
+    }
     return {
-      status: classifyVersionPayload(payload),
+      status: versionStatus,
       latencyMs: Date.now() - started,
     };
   } catch {
@@ -1556,15 +1578,13 @@ const buildInitScript = (localOrigin, bootOutcome, apiBaseUrl = '', clientToken 
   ].join('');
 };
 
-// Keep per-window init scripts aligned with state. Chooser/onboarding reloads after
-// desktop_hosts_set; if only state.initScript is updated, dom-ready reinjects a stale
-// not-configured outcome and the UI flickers on "Waiting for OpenCode".
-const syncInitScriptToWindows = (initScript = state.initScript) => {
+// Keep the main window aligned with global host configuration without overwriting
+// the runtime-specific bootstrap retained by additional and Mini Chat windows.
+const syncMainWindowInitScript = (initScript = state.initScript) => {
   if (!initScript) return;
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) {
-      win.__ocInitScript = initScript;
-    }
+  const mainWindow = state.mainWindow;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.__ocInitScript = initScript;
   }
 };
 
@@ -2476,11 +2496,8 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
   });
 
   browserWindow.webContents.on('dom-ready', () => {
-    // Prefer authoritative state script so hosts_set updates survive reloads even if a
-    // window still holds a pre-activation / not-configured __ocInitScript.
-    const initScript = state.initScript || browserWindow.__ocInitScript;
+    const initScript = browserWindow.__ocInitScript;
     if (initScript) {
-      browserWindow.__ocInitScript = initScript;
       void browserWindow.webContents.executeJavaScript(initScript).catch(() => {});
     }
   });
@@ -2531,7 +2548,7 @@ const activateMainWindow = async (url, localOrigin, bootOutcome, runtimeConfig =
     rendererRuntimeConfig.clientToken,
     rendererRuntimeConfig.requestHeaders,
   );
-  syncInitScriptToWindows(state.initScript);
+  syncMainWindowInitScript(state.initScript);
 
   const mainWindow = state.mainWindow;
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -2755,9 +2772,8 @@ const createMiniChatWindow = async ({ mode, sessionId = '', directory = '', proj
     void shell.openExternal(url).catch(() => {});
   });
   browserWindow.webContents.on('dom-ready', () => {
-    const initScript = state.initScript || browserWindow.__ocInitScript;
+    const initScript = browserWindow.__ocInitScript;
     if (initScript) {
-      browserWindow.__ocInitScript = initScript;
       void browserWindow.webContents.executeJavaScript(initScript).catch(() => {});
     }
   });
@@ -4007,8 +4023,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
         localAvailable: Boolean(state.sidecarUrl || state.localOrigin),
       });
       state.initScript = buildInitScript(state.localOrigin, state.bootOutcome, state.apiBaseUrl, state.clientToken, state.requestHeaders || {});
-      syncInitScriptToWindows(state.initScript);
-      log.info('[electron] hosts config updated, recomputed bootOutcome', state.bootOutcome);
+      syncMainWindowInitScript(state.initScript);
       return null;
     }
 
