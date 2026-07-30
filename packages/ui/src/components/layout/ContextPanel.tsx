@@ -367,7 +367,7 @@ const EditorTreeColumn: React.FC<{ visible: boolean }> = ({ visible }) => {
     <div
       ref={columnRef}
       className={cn(
-        'relative h-full flex-shrink-0 overflow-hidden border-l border-border/40 bg-background will-change-[width] motion-reduce:transition-none',
+        'relative h-full flex-shrink-0 overflow-hidden border-l border-border bg-background will-change-[width] motion-reduce:transition-none',
         !visible && 'border-l-0',
       )}
       style={{
@@ -1248,7 +1248,7 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({ rawUrl, onNavigate }) => {
 
   return (
     <div className="absolute inset-0 flex flex-col">
-      <div className="flex items-center gap-1 border-b border-border/40 bg-[var(--surface-background)] px-2 py-1">
+      <div className="flex items-center gap-1 border-b border-border bg-[var(--surface-background)] px-2 py-1">
         <div className="min-w-0 flex-1 truncate typography-micro text-muted-foreground" title={headerSrc || rawUrl}>
           {headerSrc || rawUrl || t('contextPanel.preview.empty')}
         </div>
@@ -1877,7 +1877,7 @@ const IframeBrowserPane: React.FC<DesktopBrowserPaneProps> = ({ initialUrl, dire
 
   return (
     <div className="absolute inset-0 flex flex-col bg-background">
-      <div className="flex items-center gap-1 border-b border-border/40 bg-[var(--surface-background)] px-2 py-1">
+      <div className="flex items-center gap-1 border-b border-border bg-[var(--surface-background)] px-2 py-1">
         <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0" disabled={historyIndex <= 0} onClick={() => goToHistory(historyIndex - 1)}>
           <Icon name="arrow-left" className="h-3.5 w-3.5" />
         </Button>
@@ -2167,7 +2167,7 @@ const DesktopBrowserPane: React.FC<DesktopBrowserPaneProps> = ({ initialUrl, dir
 
   return (
     <div className="absolute inset-0 flex flex-col bg-background">
-      <div className="flex items-center gap-1 border-b border-border/40 bg-[var(--surface-background)] px-2 py-1">
+      <div className="flex items-center gap-1 border-b border-border bg-[var(--surface-background)] px-2 py-1">
         <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => { try { webviewRef.current?.goBack?.(); } catch { /* webview not ready */ } }}>
           <Icon name="arrow-left" className="h-3.5 w-3.5" />
         </Button>
@@ -2730,7 +2730,7 @@ export const ContextPanel: React.FC = () => {
   const isFileTabActive = activeTab?.mode === 'file';
 
   const header = (
-    <header className="flex h-10 items-stretch border-b border-border/40">
+    <header className="flex h-10 items-stretch border-b border-border">
       {isMultiInstanceMode ? (
         <SortableTabsStrip
           items={tabItems}
@@ -2854,11 +2854,11 @@ export const ContextPanel: React.FC = () => {
           content box only while collapsed, shifting the header controls by
           1px between the collapsed and expanded states. */}
       {isOpen && !isExpanded && (
-        <div aria-hidden="true" className="absolute left-0 top-0 z-40 h-full w-px bg-border/40" />
+        <div aria-hidden="true" className="absolute left-0 top-0 z-40 h-full w-px bg-border" />
       )}
       {/* Divider between the panel and the icon rail on its right. */}
       {isOpen && (
-        <div aria-hidden="true" className="absolute right-0 top-0 z-40 h-full w-px bg-border/40" />
+        <div aria-hidden="true" className="absolute right-0 top-0 z-40 h-full w-px bg-border" />
       )}
       {!isExpanded && (
         <div

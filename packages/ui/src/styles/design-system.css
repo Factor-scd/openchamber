@@ -101,15 +101,7 @@
   }
 
   * {
-    border-color: hsl(var(--border));
-  }
-
-  :root * {
-    border-color: rgba(194, 151, 77, 0.2); /* Warm golden sand borders for light mode */
-  }
-
-  .dark * {
-    border-color: rgba(57, 56, 54, 0.5); /* #393836 at 50% opacity */
+    border-color: var(--border); /* Theme border token (interactive.border) — opaque and theme-aware */
   }
 
   body {
