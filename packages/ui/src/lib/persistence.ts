@@ -531,6 +531,7 @@ const materializeAuthoritativeUiSettings = (settings: DesktopSettings): DesktopS
     sessionGoalDefaultBudget: defaults.sessionGoalDefaultBudget,
     collapsibleThinkingBlocks: defaults.collapsibleThinkingBlocks,
     autoDeleteEnabled: defaults.autoDeleteEnabled,
+    autoSaveEnabled: defaults.autoSaveEnabled,
     autoDeleteAfterDays: defaults.autoDeleteAfterDays,
     sessionRetentionAction: defaults.sessionRetentionAction,
     followUpBehavior: DEFAULT_FOLLOW_UP_BEHAVIOR,
@@ -635,6 +636,9 @@ const applyDesktopUiPreferences = (settings: DesktopSettings) => {
   }
   if (typeof settings.autoDeleteEnabled === 'boolean' && settings.autoDeleteEnabled !== store.autoDeleteEnabled) {
     store.setAutoDeleteEnabled(settings.autoDeleteEnabled);
+  }
+  if (typeof settings.autoSaveEnabled === 'boolean' && settings.autoSaveEnabled !== store.autoSaveEnabled) {
+    store.setAutoSaveEnabled(settings.autoSaveEnabled);
   }
   if (typeof settings.autoDeleteAfterDays === 'number' && Number.isFinite(settings.autoDeleteAfterDays)) {
     const normalized = Math.max(1, Math.min(365, settings.autoDeleteAfterDays));
@@ -1083,6 +1087,9 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
   }
   if (typeof candidate.autoDeleteEnabled === 'boolean') {
     result.autoDeleteEnabled = candidate.autoDeleteEnabled;
+  }
+  if (typeof candidate.autoSaveEnabled === 'boolean') {
+    result.autoSaveEnabled = candidate.autoSaveEnabled;
   }
   if (typeof candidate.autoDeleteAfterDays === 'number' && Number.isFinite(candidate.autoDeleteAfterDays)) {
     result.autoDeleteAfterDays = candidate.autoDeleteAfterDays;
