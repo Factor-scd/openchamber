@@ -72,29 +72,15 @@ describe("content cache owner", () => {
     owner.dispose()
   })
 
-  test("disposed owners still read through without throwing", async () => {
-    let reads = 0
+  test("disposed owners throw on subsequent reads", async () => {
     const owner = createContentCachedFiles({
-      readFile: async (path: string) => ({ path, content: `value-${++reads}` }),
-      statFile: async () => ({ isFile: true, isDirectory: false, size: 7, mtimeMs: 1 }),
+      readFile: async (path: string) => ({ path, content: "value" }),
+      statFile: async () => ({ isFile: true, isDirectory: false, size: 5, mtimeMs: 1 }),
     } as unknown as FilesAPI)
 
     owner.dispose()
-    expect((await owner.files.readFile!("notes.txt", { optional: true, directory: "/tmp/project" })).content).toBe("value-1")
-    expect(reads).toBe(1)
-  })
-
-  test("validateContextFileOpen succeeds against a disposed cached files API", async () => {
-    const { validateContextFileOpen } = await import("@/lib/contextFileOpenGuard")
-    const owner = createContentCachedFiles({
-      listDirectory: async () => ({ directory: "/", entries: [] }),
-      readFile: async (path: string) => ({ path, content: "hello from notes\n" }),
-    } as unknown as FilesAPI)
-
-    owner.dispose()
-    expect(await validateContextFileOpen(owner.files, "/tmp/project/notes.txt", { directory: "/tmp/project" })).toEqual({
-      ok: true,
-    })
+    await expect(owner.files.readFile!("notes.txt", { optional: true, directory: "/tmp/project" }))
+      .rejects.toThrow("File cache owner disposed")
   })
 
   test("runtime endpoint changes clear cache but keep serving reads", async () => {

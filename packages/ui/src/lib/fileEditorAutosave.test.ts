@@ -51,10 +51,10 @@ describe('shouldAllowFileDraftSave', () => {
     expect(shouldAllowFileDraftSave(ready)).toBe(true);
   });
 
-  test('refuses incomplete load, binary, or clean draft', () => {
+  test('refuses incomplete load or binary; clean draft is a successful no-op', () => {
     expect(shouldAllowFileDraftSave({ ...ready, fileLoading: true })).toBe(false);
     expect(shouldAllowFileDraftSave({ ...ready, loadedFilePath: null })).toBe(false);
     expect(shouldAllowFileDraftSave({ ...ready, isNonEditableBinary: true })).toBe(false);
-    expect(shouldAllowFileDraftSave({ ...ready, isDirty: false })).toBe(false);
+    expect(shouldAllowFileDraftSave({ ...ready, isDirty: false })).toBe(true);
   });
 });

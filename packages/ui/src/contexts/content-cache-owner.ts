@@ -5,6 +5,14 @@ const MAX_ENTRIES = 40;
 const MAX_BYTES = 20 * 1024 * 1024;
 type Entry = { content: string; path: string; sourcePath: string; size: number; mtimeMs: number; bytes: number };
 
+/**
+ * Content-cached `FilesAPI.readFile` wrapper.
+ *
+ * Lifecycle: `RuntimeAPIProvider` owns create/dispose in an effect so React
+ * Strict Mode remounts get a fresh owner. After `dispose()`, reads throw —
+ * callers must not keep using a torn-down owner. Runtime endpoint switches
+ * bump generation and clear the cache without deactivating the owner.
+ */
 export function createContentCachedFiles(files: FilesAPI): { files: FilesAPI; dispose: () => void } {
   const cache = new Map<string, Entry>();
   let totalBytes = 0;
@@ -65,8 +73,7 @@ export function createContentCachedFiles(files: FilesAPI): { files: FilesAPI; di
     const before = await files.statFile?.(path, options).catch(() => null);
     const result = await files.readFile!(path, options);
     const after = await files.statFile?.(path, options).catch(() => null);
-    // Disposed mid-read: still return the bytes we fetched; do not cache.
-    if (!active) return result;
+    if (!active) throw new Error('File cache owner disposed');
     if (capturedGeneration !== generation) return cachedReadFile!(path, options);
     const stable = before && after && before.isFile && after.isFile
       && before.mtimeMs !== undefined && after.mtimeMs !== undefined
@@ -77,17 +84,14 @@ export function createContentCachedFiles(files: FilesAPI): { files: FilesAPI; di
   const cachedReadFile: FilesAPI['readFile'] = files.readFile
     ? async (path, options) => {
         await mutationBarrier;
-        // Disposed owners must keep serving reads. React Strict Mode can dispose a
-        // memoized owner that the provider still holds; throwing here surfaces as
-        // "Failed to open file" with no /api/fs/read request for text opens.
-        if (!active) return files.readFile!(path, options);
+        if (!active) throw new Error('File cache owner disposed');
         const capturedGeneration = generation;
         if (options?.allowOutsideWorkspace) return files.readFile!(path, options);
         const key = cacheKey(path, options);
         const hit = cache.get(key);
         if (!hit) return readFresh(key, path, options, capturedGeneration);
         const latest = await files.statFile?.(path, options).catch(() => null);
-        if (!active) return files.readFile!(path, options);
+        if (!active) throw new Error('File cache owner disposed');
         if (capturedGeneration !== generation) return cachedReadFile!(path, options);
         if (!latest || !metadataMatches(hit, latest)) {
           removeEntry(key);

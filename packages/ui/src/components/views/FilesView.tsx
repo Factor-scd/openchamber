@@ -1638,6 +1638,11 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
       return false;
     }
 
+    // Clean draft: treat as success so discard/save dialogs and Ctrl+S are not stranded.
+    if (!isDirty) {
+      return true;
+    }
+
     setIsSaving(true);
 
     try {
@@ -2351,12 +2356,14 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
 
   const canCopy = Boolean(selectedFile && (!isSelectedImage || isSelectedSvg) && !isSelectedPdf && !isUnsupportedBinary && fileContent.length > 0);
   const canCopyPath = Boolean(selectedFile && displaySelectedPath.length > 0);
-  const canEdit = Boolean(selectedFile && !selectedFileIsOutsideWorkspace && !isSelectedBinary && files.writeFile && fileContent.length <= MAX_VIEW_CHARS);
+  // Keep image/SVG on the preview path: `isBinaryFile` excludes `.svg`, so binary
+  // alone would flip canEdit/isTextFile true and show a dead edit toggle + no-op Save.
+  const canEdit = Boolean(selectedFile && !selectedFileIsOutsideWorkspace && !isSelectedBinary && !isSelectedImage && files.writeFile && fileContent.length <= MAX_VIEW_CHARS);
   const isMarkdown = Boolean(selectedFile?.path && isMarkdownFile(selectedFile.path));
   const isJson = Boolean(selectedFile?.path && isJsonFile(selectedFile.path));
   const isHtml = Boolean(selectedFile?.path && isHtmlFile(selectedFile.path));
   const isDrawio = Boolean(selectedFile?.path && isDrawioFile(selectedFile.path));
-  const isTextFile = Boolean(selectedFile && !isSelectedBinary);
+  const isTextFile = Boolean(selectedFile && !isSelectedBinary && !isSelectedImage);
   const canUseShikiFileView = isTextFile && !isMarkdown && !isDrawio && !(isHtml && htmlViewMode === 'preview');
   const isEditingFile = (isMarkdown && mdViewMode === 'edit')
     || (isHtml && htmlViewMode === 'edit')

@@ -38,11 +38,17 @@ export type FileEditorSaveDraftGate = {
 };
 
 /**
- * Whether saveDraft may write. Refuses empty drafts against stale content and any binary target.
+ * Whether saveDraft may proceed.
+ * - Clean drafts return true ("nothing to save" is success) so callers like the
+ *   unsaved-changes dialog and Ctrl+S do not treat a no-op as failure.
+ * - Incomplete loads and binary targets return false (refused).
  */
 export function shouldAllowFileDraftSave(gate: FileEditorSaveDraftGate): boolean {
-  if (!gate.selectedFilePath || !gate.isDirty) {
+  if (!gate.selectedFilePath) {
     return false;
+  }
+  if (!gate.isDirty) {
+    return true;
   }
   if (gate.fileLoading || gate.loadedFilePath !== gate.selectedFilePath || gate.isNonEditableBinary) {
     return false;
