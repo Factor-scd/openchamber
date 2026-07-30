@@ -125,6 +125,12 @@ const start = async (): Promise<void> => {
 
 void start();
 
+if (import.meta.hot) {
+  import.meta.hot.on('openchamber:theme-updated', (theme: unknown) => {
+    window.dispatchEvent(new CustomEvent('openchamber:theme-hmr', { detail: theme }));
+  });
+}
+
 if (import.meta.env.PROD) {
   registerPwaServiceWorker();
 } else {

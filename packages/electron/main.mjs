@@ -2450,6 +2450,13 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
       if (url.protocol === 'devtools:') return true;
       if (url.protocol === `${UI_PROTOCOL}:`) return true;
       if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
+      // In development the renderer is served by Vite while state.localOrigin
+      // remains the separate local API server. Permit same-origin reloads from
+      // the renderer itself so Vite full-reload fallbacks stay in Electron.
+      try {
+        if (new URL(browserWindow.webContents.getURL()).origin === url.origin) return true;
+      } catch {
+      }
       if (state.localOrigin) {
         try {
           if (new URL(state.localOrigin).origin === url.origin) return true;
@@ -4681,6 +4688,9 @@ const isLocalSender = (webContents) => {
     if (!raw) return false;
     const url = new URL(raw);
     if (url.protocol === `${UI_PROTOCOL}:` && url.hostname === 'app') return true;
+    // Electron dev renders from Vite while the local API is served on a
+    // separate port. This exact loopback HMR origin is trusted only in dev.
+    if (isDev && url.origin === `http://127.0.0.1:${process.env.OPENCHAMBER_HMR_UI_PORT || '5173'}`) return true;
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
     if (state.localOrigin) {
       try {
