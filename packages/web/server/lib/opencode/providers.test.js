@@ -50,6 +50,27 @@ describe('custom provider config persistence', () => {
     }).ok).toBe(false);
   });
 
+  test('validateCustomProviderConfig rejects missing credentials', () => {
+    expect(validateCustomProviderConfig('ok', {
+      name: 'X',
+      options: { baseURL: 'https://api.example.com' },
+      models: { m: { name: 'M' } },
+    }).ok).toBe(false);
+
+    expect(validateCustomProviderConfig('ok', {
+      name: 'X',
+      options: { baseURL: 'https://api.example.com' },
+      models: { m: { name: 'M' } },
+    }, { hasStoredAuth: true }).ok).toBe(true);
+
+    expect(validateCustomProviderConfig('ok', {
+      name: 'X',
+      env: ['MY_KEY'],
+      options: { baseURL: 'https://api.example.com' },
+      models: { m: { name: 'M' } },
+    }).ok).toBe(true);
+  });
+
   test('upsertProviderConfig writes and round-trips project config', () => {
     const result = upsertProviderConfig('campus-llm', {
       name: 'Campus LLM',
@@ -105,6 +126,7 @@ describe('custom provider config persistence', () => {
       name: 'Campus LLM',
       options: { baseURL: 'https://llm.example.edu/v1' },
       models: { b: { name: 'B' } },
+      env: ['CAMPUS_KEY'],
     }, projectDir, 'project');
 
     const written = readJson(configPath);
@@ -118,6 +140,7 @@ describe('custom provider config persistence', () => {
       name: 'Temp',
       options: { baseURL: 'https://api.example.com/v1' },
       models: { m: { name: 'M' } },
+      env: ['TEMP_KEY'],
     }, projectDir, 'project');
 
     expect(getProviderSources('temp-provider', projectDir).sources.project.exists).toBe(true);
@@ -131,7 +154,19 @@ describe('custom provider config persistence', () => {
       name: 'X',
       options: { baseURL: 'not-a-url' },
       models: { m: { name: 'M' } },
+      env: ['X'],
     }, projectDir, 'project')).toThrow(/Base URL/);
     expect(fs.existsSync(configPath)).toBe(false);
+  });
+
+  test('upsert with hasStoredAuth allows config without env', () => {
+    const result = upsertProviderConfig('keyed-provider', {
+      name: 'Keyed',
+      options: { baseURL: 'https://api.example.com/v1' },
+      models: { m: { name: 'M' } },
+    }, projectDir, 'project', { hasStoredAuth: true });
+
+    expect(result.providerId).toBe('keyed-provider');
+    expect(result.config.env).toEqual(undefined);
   });
 });
