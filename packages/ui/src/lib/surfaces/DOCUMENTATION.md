@@ -26,8 +26,10 @@ edge (`components/layout/ContextPanelRail.tsx`) and rendered by
   (`useUIStore.contextRailHiddenSurfaces`, edited from the rail's trailing
   configure button — `ContextRailSurfacesDialog`), drops the plan surface
   unless plan mode is enabled,
-  drops the walkthrough on VS Code and below `WALKTHROUGH_MIN_WIDTH`, and hides
-  `has-content` surfaces until a tab of their mode exists. Both consumers use
+  drops the walkthrough on VS Code and below `WALKTHROUGH_MIN_WIDTH`, hides
+  `has-content` surfaces until a tab of their mode exists, and drops the `pr`
+  surface when the repository is on a git provider other than GitHub or GitLab
+  (`gitProvider: 'other'`). Both consumers use
   it so the digit shown on a rail badge always maps to the same surface the
   shortcut opens.
 
