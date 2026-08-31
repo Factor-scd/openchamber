@@ -15,6 +15,8 @@ import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeApiBaseUrl } from '@/lib/runtime-switch';
 import { getVSCodeBootstrapConfig } from '@/lib/vscodeBootstrap';
 import { isVSCodeRuntime } from './utils/vscodeRuntime';
+import { getProjectGitProviders } from '@/lib/projectGitProviders';
+import { useGitProviderDomainsStore } from '@/stores/useGitProviderDomainsStore';
 
 /** Pick a color key that's least used among existing projects */
 const pickAutoColor = (projects: ProjectEntry[]): string => {
@@ -779,6 +781,14 @@ export const useProjectsStore = create<ProjectsStore>()(
 
       opencodeClient.setDirectory(target.path);
       useDirectoryStore.getState().setDirectory(target.path, { showOverlay: false });
+
+      // Best-effort: hydrate the newly active project's git provider override
+      // so detection picks up its self-hosted api base host right away.
+      void getProjectGitProviders(id)
+        .then(({ gitProviders }) => {
+          useGitProviderDomainsStore.getState().hydrateProjectFromServer(id, gitProviders);
+        })
+        .catch(() => undefined);
     },
 
     setActiveProjectIdOnly: (id: string) => {

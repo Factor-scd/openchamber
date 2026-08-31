@@ -18,6 +18,7 @@ import { ComposerDictation } from '@/components/dictation/ComposerDictation';
 import { Icon } from '@/components/icon/Icon';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
+import { useGitProvider } from '@/lib/gitProvider';
 import { ModelControls } from '../../ModelControls';
 import { ComposerActionButtons } from './ComposerActionButtons';
 import { ComposerAttachmentControls } from './ComposerAttachmentControls';
@@ -110,6 +111,8 @@ export function ComposerFooter(props: ComposerFooterProps) {
         onDictationContentHeightChange,
     } = props;
 
+    const gitProvider = useGitProvider(directory);
+
     return (
         <div
             className={cn(
@@ -134,6 +137,7 @@ export function ComposerFooter(props: ComposerFooterProps) {
                                 handlePickLocalFiles={onPickLocalFiles}
                                 openIssuePicker={onOpenIssuePicker}
                                 openPrPicker={onOpenPrPicker}
+                                gitProvider={gitProvider}
                                 showLinearPicker={showLinearPicker}
                                 openLinearPicker={onOpenLinearPicker}
                                 onOpenSettings={onOpenSettings}
@@ -205,6 +209,7 @@ export function ComposerFooter(props: ComposerFooterProps) {
                             handlePickLocalFiles={onPickLocalFiles}
                             openIssuePicker={onOpenIssuePicker}
                             openPrPicker={onOpenPrPicker}
+                            gitProvider={gitProvider}
                             showLinearPicker={showLinearPicker}
                             openLinearPicker={onOpenLinearPicker}
                             onOpenSettings={onOpenSettings}

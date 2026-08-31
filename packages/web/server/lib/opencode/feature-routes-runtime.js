@@ -5,7 +5,10 @@ import { registerWalkthroughRoutes } from '../walkthrough/routes.js';
 import { registerSessionGoalRoutes } from '../session-goal/routes.js';
 import { registerGitHubRoutes } from '../github/routes.js';
 import { registerLinearRoutes } from '../linear/routes.js';
+import { registerGitLabRoutes } from '../gitlab/routes.js';
+import { registerGiteaRoutes } from '../gitea/routes.js';
 import { registerGitRoutes } from '../git/routes.js';
+import { registerGitProviderRoutes } from '../git-providers/routes.js';
 import { registerDevServerRoutes } from '../dev-servers/routes.js';
 import { registerMagicPromptRoutes } from '../magic-prompts/routes.js';
 import { registerSessionFoldersRoutes } from '../session-folders/routes.js';
@@ -302,6 +305,9 @@ export const createFeatureRoutesRuntime = (dependencies) => {
     registerSessionGoalRoutes(app);
     registerGitHubRoutes(app);
     registerLinearRoutes(app);
+    registerGitLabRoutes(app);
+    registerGiteaRoutes(app);
+    registerGitProviderRoutes(app);
     registerGitRoutes(app);
     registerDevServerRoutes(app, { scanner: devServerScanner, getOwnPorts });
     registerMagicPromptRoutes(app, {

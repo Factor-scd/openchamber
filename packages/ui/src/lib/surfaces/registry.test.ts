@@ -13,7 +13,6 @@ const baseOptions = {
   screenWidth: 1200,
   tabs: [],
   linearConnected: true,
-  githubConnected: true,
 } as const;
 
 describe('getVisibleContextRailSurfaces', () => {
@@ -61,6 +60,18 @@ describe('getVisibleContextRailSurfaces', () => {
     expect(getVisibleContextRailSurfaces(baseOptions).some((s) => s.id === 'browser')).toBe(true);
   });
 
+  test('hides the pr surface for other git providers but keeps it for github/gitlab/gitea', () => {
+    expect(getVisibleContextRailSurfaces({ ...baseOptions, gitProvider: 'other' }).some((s) => s.id === 'pr')).toBe(false);
+    expect(getVisibleContextRailSurfaces({ ...baseOptions, gitProvider: 'gitlab' }).some((s) => s.id === 'pr')).toBe(true);
+    expect(getVisibleContextRailSurfaces({ ...baseOptions, gitProvider: 'github' }).some((s) => s.id === 'pr')).toBe(true);
+    expect(getVisibleContextRailSurfaces({ ...baseOptions, gitProvider: 'gitea' }).some((s) => s.id === 'pr')).toBe(true);
+  });
+
+  test('keeps the pr surface while the git provider is unknown', () => {
+    expect(getVisibleContextRailSurfaces({ ...baseOptions, gitProvider: null }).some((s) => s.id === 'pr')).toBe(true);
+    expect(getVisibleContextRailSurfaces(baseOptions).some((s) => s.id === 'pr')).toBe(true);
+  });
+
   test('respects the persisted user rail order', () => {
     const surfaces = getVisibleContextRailSurfaces({ ...baseOptions, railOrder: ['git', 'context'] });
     expect(surfaces.slice(0, 2).map((surface) => surface.id)).toEqual(['git', 'context']);
@@ -71,11 +82,6 @@ describe('getVisibleContextRailSurfaces', () => {
     const walkthrough = ids.indexOf('walkthrough');
     expect(walkthrough).toBeGreaterThanOrEqual(0);
     expect(ids.indexOf('linear')).toBe(walkthrough + 1);
-  });
-
-  test('hides the pull request surface until GitHub is connected', () => {
-    expect(getVisibleContextRailSurfaces({ ...baseOptions, githubConnected: false }).some((s) => s.id === 'pr')).toBe(false);
-    expect(getVisibleContextRailSurfaces({ ...baseOptions, githubConnected: true }).some((s) => s.id === 'pr')).toBe(true);
   });
 
   test('hides Linear until a workspace is connected', () => {

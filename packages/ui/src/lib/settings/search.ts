@@ -29,6 +29,8 @@ interface SettingsSearchAvailabilityContext extends SettingsRuntimeContext {
   isLinux: boolean;
   // Windows ARM64 — temporary workaround gate (see opencode#19130).
   isWindowsArm64: boolean;
+  // Git provider override fields only render once an account is connected.
+  gitProvidersConnected: { github: boolean; gitlab: boolean; gitea: boolean };
 }
 
 const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
@@ -149,18 +151,17 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     keywords: ['editor', 'autosave', 'auto-save', 'files', 'save'],
   },
   {
+    id: 'appearance.expanded-editor-toolbar',
+    page: 'general',
+    titleKey: 'settings.openchamber.visual.field.expandedEditorToolbar',
+    keywords: ['editor', 'toolbar', 'tabs', 'docked', 'files'],
+    isAvailable: (ctx) => !ctx.isVSCode,
+  },
+  {
     id: 'appearance.file-editor-keymap',
     page: 'general',
     titleKey: 'settings.openchamber.visual.field.fileEditorKeymap',
     keywords: ['editor', 'vim', 'keymap'],
-  },
-  {
-    id: 'appearance.session-tabs',
-    page: 'general',
-    titleKey: 'settings.openchamber.visual.field.sessionTabsGroup',
-    descriptionKey: 'settings.openchamber.visual.field.sessionTabsInfo',
-    keywords: ['session', 'tabs', 'header', 'working set'],
-    isAvailable: (ctx) => !ctx.isMobile && !ctx.isVSCode,
   },
   {
     id: 'appearance.terminal-quick-keys',
@@ -239,19 +240,6 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     page: 'chat',
     titleKey: 'settings.openchamber.visual.section.reasoning',
     keywords: ['thinking', 'traces'],
-  },
-  {
-    id: 'chat.streaming',
-    page: 'chat',
-    titleKey: 'settings.openchamber.visual.section.streaming',
-    keywords: ['stream', 'scroll'],
-  },
-  {
-    id: 'chat.streaming-auto-follow',
-    page: 'chat',
-    titleKey: 'settings.openchamber.visual.field.streamingAutoFollow',
-    descriptionKey: 'settings.openchamber.visual.field.streamingAutoFollowInfo',
-    keywords: ['autoscroll', 'auto-scroll', 'follow', 'stick to bottom', 'streaming'],
   },
   {
     id: 'chat.sticky-user-header',
@@ -351,7 +339,7 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     id: 'chat.composer',
     page: 'chat',
     titleKey: 'settings.openchamber.visual.section.composer',
-    keywords: ['input', 'draft', 'spellcheck', 'paste'],
+    keywords: ['input', 'draft', 'spellcheck'],
   },
   {
     id: 'chat.spellcheck',
@@ -359,13 +347,6 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     titleKey: 'settings.openchamber.visual.field.enableSpellcheckInTextInputs',
     keywords: ['spelling', 'input'],
     isAvailable: (ctx) => !ctx.isMobile,
-  },
-  {
-    id: 'chat.large-text-paste',
-    page: 'chat',
-    titleKey: 'settings.openchamber.visual.field.largeTextPaste',
-    descriptionKey: 'settings.openchamber.visual.field.largeTextPasteHint',
-    keywords: ['paste', 'clipboard', 'attachment', 'large', 'text', 'file'],
   },
   {
     id: 'sessions.default-model',
@@ -528,6 +509,66 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     isAvailable: (ctx) => !ctx.isVSCode && useUIStore.getState().agentMemoryFeatureAvailable,
   },
   {
+    id: 'git.github-account',
+    page: 'git',
+    titleKey: 'settings.github.page.actions.connect',
+    keywords: ['github', 'account', 'oauth', 'prs', 'issues'],
+  },
+  {
+    id: 'git.gitlab-account',
+    page: 'git',
+    titleKey: 'settings.gitlab.page.actions.connect',
+    keywords: ['gitlab', 'account', 'pat', 'personal access token', 'issues', 'merge requests'],
+  },
+  {
+    id: 'git.github-api-base-url',
+    page: 'git',
+    titleKey: 'settings.github.page.apiBaseUrl.label',
+    descriptionKey: 'settings.github.page.apiBaseUrl.description',
+    keywords: ['github', 'api', 'base url', 'enterprise', 'self-hosted', 'server'],
+    isAvailable: (ctx) => ctx.gitProvidersConnected.github,
+  },
+  {
+    id: 'git.github-detect-urls',
+    page: 'git',
+    titleKey: 'settings.github.page.detectUrls.label',
+    descriptionKey: 'settings.github.page.detectUrls.description',
+    keywords: ['github', 'detect', 'remote', 'host', 'domain', 'ssh', 'url', 'self-hosted'],
+    isAvailable: (ctx) => ctx.gitProvidersConnected.github,
+  },
+  {
+    id: 'git.gitlab-api-base-url',
+    page: 'git',
+    titleKey: 'settings.gitlab.page.apiBaseUrl.label',
+    descriptionKey: 'settings.gitlab.page.apiBaseUrl.description',
+    keywords: ['gitlab', 'api', 'base url', 'self-hosted', 'server', 'instance'],
+    isAvailable: (ctx) => ctx.gitProvidersConnected.gitlab,
+  },
+  {
+    id: 'git.gitlab-detect-urls',
+    page: 'git',
+    titleKey: 'settings.gitlab.page.detectUrls.label',
+    descriptionKey: 'settings.gitlab.page.detectUrls.description',
+    keywords: ['gitlab', 'detect', 'remote', 'host', 'domain', 'ssh', 'url', 'self-hosted'],
+    isAvailable: (ctx) => ctx.gitProvidersConnected.gitlab,
+  },
+  {
+    id: 'git.gitea-api-base-url',
+    page: 'git',
+    titleKey: 'settings.gitea.page.apiBaseUrl.label',
+    descriptionKey: 'settings.gitea.page.apiBaseUrl.description',
+    keywords: ['gitea', 'forgejo', 'api', 'base url', 'self-hosted', 'server', 'instance'],
+    isAvailable: (ctx) => ctx.gitProvidersConnected.gitea,
+  },
+  {
+    id: 'git.gitea-detect-urls',
+    page: 'git',
+    titleKey: 'settings.gitea.page.detectUrls.label',
+    descriptionKey: 'settings.gitea.page.detectUrls.description',
+    keywords: ['gitea', 'forgejo', 'detect', 'remote', 'host', 'domain', 'ssh', 'url', 'self-hosted'],
+    isAvailable: (ctx) => ctx.gitProvidersConnected.gitea,
+  },
+  {
     id: 'git.identities',
     page: 'git',
     titleKey: 'settings.gitIdentities.page.section.title',
@@ -606,6 +647,20 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     page: 'projects',
     titleKey: 'settings.openchamber.worktrees.setup.waitForCommands',
     keywords: ['worktree', 'setup commands', 'bootstrap', 'wait'],
+  },
+  {
+    id: 'projects.git-providers',
+    page: 'projects',
+    titleKey: 'settings.projects.page.gitProviders.title',
+    descriptionKey: 'settings.projects.page.gitProviders.description',
+    keywords: ['github', 'gitlab', 'gitea', 'api base url', 'self-hosted', 'override', 'enterprise', 'server', 'provider', 'forge'],
+  },
+  {
+    id: 'projects.git-providers.provider',
+    page: 'projects',
+    titleKey: 'settings.projects.page.gitProviders.provider.label',
+    descriptionKey: 'settings.projects.page.gitProviders.provider.description',
+    keywords: ['github', 'gitlab', 'gitea', 'provider', 'forge', 'auto-detect', 'detection'],
   },
   {
     id: 'remote-instances.client-auth',
@@ -978,46 +1033,6 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     isAvailable: (ctx) => ctx.isWeb && !ctx.isDesktop && !ctx.isVSCode,
   },
 
-  {
-    id: 'integrations.first-party',
-    page: 'integrations',
-    titleKey: 'settings.integrations.firstParty.title',
-    descriptionKey: 'settings.integrations.firstParty.info',
-    keywords: ['built-in', 'first-party', 'native', 'github', 'linear'],
-    isAvailable: (ctx) => !ctx.isVSCode,
-  },
-  {
-    id: 'integrations.github',
-    page: 'integrations',
-    titleKey: 'settings.integrations.github.title',
-    descriptionKey: 'settings.integrations.github.description',
-    keywords: ['github', 'account', 'oauth', 'gh', 'cli', 'prs', 'pull request', 'issues', 'connect'],
-    isAvailable: (ctx) => !ctx.isVSCode,
-  },
-  {
-    id: 'integrations.linear',
-    page: 'integrations',
-    titleKey: 'settings.integrations.linear.title',
-    descriptionKey: 'settings.integrations.linear.description',
-    keywords: ['linear', 'issues', 'oauth', 'connect', 'workspace'],
-    isAvailable: (ctx) => !ctx.isVSCode,
-  },
-  {
-    id: 'integrations.linear.add-workspace',
-    page: 'integrations',
-    titleKey: 'settings.integrations.linear.actions.addWorkspace',
-    descriptionKey: 'settings.integrations.linear.description',
-    keywords: ['linear', 'workspace', 'add', 'connect', 'oauth'],
-    isAvailable: (ctx) => !ctx.isVSCode,
-  },
-  {
-    id: 'integrations.linear.mapping',
-    page: 'integrations',
-    titleKey: 'settings.integrations.linear.mapping.defaultProject',
-    descriptionKey: 'settings.integrations.linear.mapping.defaultProject.info',
-    keywords: ['linear', 'project', 'team', 'map', 'workspace', 'directory'],
-    isAvailable: (ctx) => !ctx.isVSCode,
-  },
   {
     id: 'integrations.third-party',
     page: 'integrations',

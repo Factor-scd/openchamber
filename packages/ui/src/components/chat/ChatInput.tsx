@@ -68,6 +68,11 @@ import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { GitHubIssuePickerDialog } from '@/components/session/GitHubIssuePickerDialog';
 import { GitHubPrPickerDialog } from '@/components/session/GitHubPrPickerDialog';
 import { LinearIssuePickerDialog } from '@/components/session/LinearIssuePickerDialog';
+import { GitLabIssuePickerDialog } from '@/components/session/GitLabIssuePickerDialog';
+import { GitLabMrPickerDialog } from '@/components/session/GitLabMrPickerDialog';
+import { GiteaIssuePickerDialog } from '@/components/session/GiteaIssuePickerDialog';
+import { GiteaPrPickerDialog } from '@/components/session/GiteaPrPickerDialog';
+import { useGitProvider } from '@/lib/gitProvider';
 import { Icon } from "@/components/icon/Icon";
 import { DraftPresetChips } from './DraftPresetChips';
 import { useChatSearchDirectory } from '@/hooks/useChatSearchDirectory';
@@ -443,6 +448,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
     const { currentTheme } = useThemeSystem();
     const chatSearchDirectory = useChatSearchDirectory();
     const isGitRepo = useIsGitRepo(currentDirectory);
+    const gitProvider = useGitProvider(currentDirectory);
     const currentGitStatus = useGitStore((state) =>
         currentDirectory ? state.directories.get(currentDirectory)?.status ?? null : null,
     );
@@ -732,6 +738,10 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
     const [issuePickerOpen, setIssuePickerOpen] = React.useState(false);
     const [prPickerOpen, setPrPickerOpen] = React.useState(false);
     const [linearPickerOpen, setLinearPickerOpen] = React.useState(false);
+    const [gitlabIssuePickerOpen, setGitlabIssuePickerOpen] = React.useState(false);
+    const [gitlabMrPickerOpen, setGitlabMrPickerOpen] = React.useState(false);
+    const [giteaIssuePickerOpen, setGiteaIssuePickerOpen] = React.useState(false);
+    const [giteaPrPickerOpen, setGiteaPrPickerOpen] = React.useState(false);
     const [linkedIssue, setLinkedIssue] = React.useState<{ 
         number: number; 
         title: string; 
@@ -749,6 +759,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         instructionsText: string;
         contextText: string;
         author?: { login: string; avatarUrl?: string };
+        provider?: 'github' | 'gitlab' | 'gitea';
     } | null>(null);
     const [linkedLinearIssue, setLinkedLinearIssue] = React.useState<{
         identifier: string;
@@ -982,12 +993,24 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
     }, [isExpandedInput, setExpandedInput]);
 
     const openIssuePicker = React.useCallback(() => {
-        setIssuePickerOpen(true);
-    }, []);
+        if (gitProvider === 'gitlab') {
+            setGitlabIssuePickerOpen(true);
+        } else if (gitProvider === 'gitea') {
+            setGiteaIssuePickerOpen(true);
+        } else {
+            setIssuePickerOpen(true);
+        }
+    }, [gitProvider]);
 
     const openPrPicker = React.useCallback(() => {
-        setPrPickerOpen(true);
-    }, []);
+        if (gitProvider === 'gitlab') {
+            setGitlabMrPickerOpen(true);
+        } else if (gitProvider === 'gitea') {
+            setGiteaPrPickerOpen(true);
+        } else {
+            setPrPickerOpen(true);
+        }
+    }, [gitProvider]);
 
     const openLinearPicker = React.useCallback(() => {
         setLinearPickerOpen(true);
@@ -2804,20 +2827,24 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                         author={linkedIssue.author}
                         openInBrowserLabel={t('chat.chatInput.linked.issue.openInBrowserAria')}
                         removeLabel={t('chat.chatInput.linked.issue.removeAria')}
-                        onReopenPicker={() => setIssuePickerOpen(true)}
+                        onReopenPicker={openIssuePicker}
                         onRemove={() => setLinkedIssue(null)}
                     />
                 ) : null}
                 {linkedPr && !isVSCode ? (
                     <LinkedReferenceRow
-                        numberLabel={t('chat.chatInput.linked.pr.number', { number: linkedPr.number })}
+                        numberLabel={
+                            linkedPr.provider === 'gitlab'
+                                ? t('chat.chatInput.linked.mr.number', { number: linkedPr.number })
+                                : t('chat.chatInput.linked.pr.number', { number: linkedPr.number })
+                        }
                         title={linkedPr.title}
                         url={linkedPr.url}
                         author={linkedPr.author}
                         branches={{ head: linkedPr.head, base: linkedPr.base }}
                         openInBrowserLabel={t('chat.chatInput.linked.pr.openInBrowserAria')}
                         removeLabel={t('chat.chatInput.linked.pr.removeAria')}
-                        onReopenPicker={() => setPrPickerOpen(true)}
+                        onReopenPicker={openPrPicker}
                         onRemove={() => setLinkedPr(null)}
                     />
                 ) : null}
@@ -3168,6 +3195,40 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                 setLinkedPr(null);
             }}
         />
+        <GitLabIssuePickerDialog
+            open={gitlabIssuePickerOpen}
+            onOpenChange={setGitlabIssuePickerOpen}
+            mode="select"
+            onSelect={(issue) => {
+                setLinkedIssue(issue);
+                setLinkedPr(null);
+            }}
+        />
+        <GitLabMrPickerDialog
+            open={gitlabMrPickerOpen}
+            onOpenChange={setGitlabMrPickerOpen}
+            onSelect={(pr) => {
+                setLinkedPr({ ...pr, provider: 'gitlab' as const });
+                setLinkedIssue(null);
+            }}
+        />
+        <GiteaIssuePickerDialog
+            open={giteaIssuePickerOpen}
+            onOpenChange={setGiteaIssuePickerOpen}
+            mode="select"
+            onSelect={(issue) => {
+                setLinkedIssue(issue);
+                setLinkedPr(null);
+            }}
+        />
+        <GiteaPrPickerDialog
+            open={giteaPrPickerOpen}
+            onOpenChange={setGiteaPrPickerOpen}
+            onSelect={(pr) => {
+                setLinkedPr({ ...pr, provider: 'gitea' as const });
+                setLinkedIssue(null);
+            }}
+        />
         <ReviewFlowDialog
             open={reviewDialogOpen}
             onOpenChange={setReviewDialogOpen}
@@ -3234,8 +3295,8 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                             requestAnimationFrame(openIssuePicker);
                         }}
                     >
-                        <Icon name="github" className="h-[18px] w-[18px] flex-shrink-0 text-muted-foreground" />
-                        {t('chat.chatInput.actions.linkGithubIssue')}
+                        <Icon name={gitProvider === 'gitlab' ? 'gitlab' : gitProvider === 'gitea' ? 'git-branch' : 'github'} className="h-[18px] w-[18px] flex-shrink-0 text-muted-foreground" />
+                        {gitProvider === 'gitlab' ? t('chat.chatInput.actions.linkGitlabIssue') : gitProvider === 'gitea' ? t('chat.chatInput.actions.linkGiteaIssue') : t('chat.chatInput.actions.linkGithubIssue')}
                     </button>
                     <button
                         type="button"
@@ -3246,8 +3307,8 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                             requestAnimationFrame(openPrPicker);
                         }}
                     >
-                        <Icon name="git-pull-request" className="h-[18px] w-[18px] flex-shrink-0 text-muted-foreground" />
-                        {t('chat.chatInput.actions.linkGithubPr')}
+                        <Icon name={gitProvider === 'gitlab' ? 'gitlab' : 'git-pull-request'} className="h-[18px] w-[18px] flex-shrink-0 text-muted-foreground" />
+                        {gitProvider === 'gitlab' ? t('chat.chatInput.actions.linkGitlabMr') : gitProvider === 'gitea' ? t('chat.chatInput.actions.linkGiteaPr') : t('chat.chatInput.actions.linkGithubPr')}
                     </button>
                     {showLinearPicker ? (
                         <button
