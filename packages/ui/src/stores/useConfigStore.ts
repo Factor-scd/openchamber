@@ -908,6 +908,11 @@ interface DirectoryScopedConfig {
     selectionSource?: "auto" | "manual";
 }
 
+type CurrentVariantSelection = {
+    override: string | null | undefined;
+    inherited: string | undefined;
+};
+
 /**
  * Lift the active directory's cached provider/agent snapshot into the top-level
  * fields the pickers read (`providers`, `agents`, selections), so a cold start
@@ -1029,6 +1034,7 @@ interface ConfigStore {
     currentProviderId: string;
     currentModelId: string;
     currentVariant: string | undefined;
+    currentVariantSelection: CurrentVariantSelection;
     currentAgentName: string | undefined;
     selectedProviderId: string;
     agentModelSelections: { [agentName: string]: { providerId: string; modelId: string } };
@@ -1121,7 +1127,8 @@ interface ConfigStore {
     setProvider: (providerId: string) => void;
     setModel: (modelId: string) => void;
     setCurrentVariant: (variant: string | undefined) => void;
-    cycleCurrentVariant: () => void;
+    setCurrentVariantOverride: (override: string | null | undefined, inherited: string | undefined) => void;
+    cycleCurrentVariant: () => string | undefined;
     getCurrentModelVariants: () => string[];
     setAgent: (agentName: string | undefined) => void;
     applyDefaultModelAgentSelection: (options?: { projectDefaultModel?: string; projectDefaultVariant?: string }) => void;
@@ -1194,6 +1201,7 @@ export const useConfigStore = create<ConfigStore>()(
                 currentProviderId: "",
                 currentModelId: "",
                 currentVariant: undefined,
+                currentVariantSelection: { override: undefined, inherited: undefined },
                 currentAgentName: undefined,
                 selectedProviderId: "",
                 agentModelSelections: {},
@@ -1460,6 +1468,7 @@ export const useConfigStore = create<ConfigStore>()(
                                 currentProviderId: snapshot.currentProviderId,
                                 currentModelId: snapshot.currentModelId,
                                 currentVariant: snapshot.currentVariant,
+                                currentVariantSelection: { override: undefined, inherited: snapshot.currentVariant },
                                 currentAgentName: snapshot.currentAgentName,
                                 selectedProviderId: snapshot.selectedProviderId,
                                 agentModelSelections: snapshot.agentModelSelections,
@@ -1476,6 +1485,7 @@ export const useConfigStore = create<ConfigStore>()(
                             agents: [],
                             currentProviderId: "",
                             currentModelId: "",
+                            currentVariantSelection: { override: undefined, inherited: undefined },
                             currentAgentName: undefined,
                             selectedProviderId: "",
                             agentModelSelections: {},
@@ -1870,13 +1880,22 @@ export const useConfigStore = create<ConfigStore>()(
                 },
 
                 setCurrentVariant: (variant: string | undefined) => {
+                    get().setCurrentVariantOverride(undefined, variant);
+                },
+
+                setCurrentVariantOverride: (override, inherited) => {
                     set((state) => {
-                        if (state.currentVariant === variant) {
+                        const currentVariant = override ?? inherited;
+                        if (
+                            state.currentVariant === currentVariant
+                            && state.currentVariantSelection.override === override
+                            && state.currentVariantSelection.inherited === inherited
+                        ) {
                             return state;
                         }
 
                         const directoryKey = state.activeDirectoryKey;
-                        const baseSnapshot: DirectoryScopedConfig = state.directoryScoped[directoryKey] ?? {
+                        const baseSnapshot = state.directoryScoped[directoryKey] ?? {
                             providers: state.providers,
                             agents: state.agents,
                             currentProviderId: state.currentProviderId,
@@ -1888,18 +1907,17 @@ export const useConfigStore = create<ConfigStore>()(
                             defaultProviders: state.defaultProviders,
                         };
 
-                        const nextSnapshot: DirectoryScopedConfig = {
-                            ...baseSnapshot,
-                            currentVariant: variant,
-                            selectionSource: "manual",
-                        };
-
                         return {
-                            currentVariant: variant,
+                            currentVariant,
+                            currentVariantSelection: { override, inherited },
                             selectionSource: "manual",
                             directoryScoped: {
                                 ...state.directoryScoped,
-                                [directoryKey]: nextSnapshot,
+                                [directoryKey]: {
+                                    ...baseSnapshot,
+                                    currentVariant,
+                                    selectionSource: "manual",
+                                },
                             },
                         };
                     });
@@ -1917,22 +1935,26 @@ export const useConfigStore = create<ConfigStore>()(
                 cycleCurrentVariant: () => {
                     const variantKeys = get().getCurrentModelVariants();
                     if (variantKeys.length === 0) {
-                        return;
+                        return undefined;
                     }
 
-                    const current = get().currentVariant;
-                    if (!current) {
-                        get().setCurrentVariant(variantKeys[0]);
-                        return;
+                    const state = get();
+                    const currentOverride = state.currentVariantSelection.override;
+                    const inheritedVariant = state.currentVariantSelection.inherited ?? state.currentVariant;
+                    const currentVariant = currentOverride === undefined
+                        ? state.currentVariant
+                        : currentOverride;
+                    let nextOverride: string | null;
+
+                    if (currentVariant === null || currentVariant === undefined) {
+                        nextOverride = variantKeys[0];
+                    } else {
+                        const index = variantKeys.indexOf(currentVariant);
+                        nextOverride = index >= 0 ? (variantKeys[index + 1] ?? null) : null;
                     }
 
-                    const index = variantKeys.indexOf(current);
-                    if (index === -1 || index === variantKeys.length - 1) {
-                        get().setCurrentVariant(undefined);
-                        return;
-                    }
-
-                    get().setCurrentVariant(variantKeys[index + 1]);
+                    get().setCurrentVariantOverride(nextOverride, inheritedVariant);
+                    return nextOverride ?? undefined;
                 },
  
                 setSelectedProvider: (providerId: string) => {
@@ -2694,6 +2716,10 @@ export const useConfigStore = create<ConfigStore>()(
                             nextState.currentProviderId = resolvedProviderId;
                             nextState.currentModelId = resolvedModelId;
                             nextState.currentVariant = resolvedVariant;
+                            nextState.currentVariantSelection = {
+                                override: resolvedVariant,
+                                inherited: resolvedVariant,
+                            };
                         }
 
                         return nextState;

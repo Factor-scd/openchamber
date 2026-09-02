@@ -21,7 +21,6 @@ import { buildLinkedIssue } from '@/lib/linkedIssues';
 import { useUserMessageHistory } from "@/sync/sync-context";
 import { getInlineCommentDraftKey, useInlineCommentDraftStore, type InlineCommentDraft, type InlineCommentDraftTarget } from '@/stores/useInlineCommentDraftStore';
 import { useSnippetsStore } from '@/stores/useSnippetsStore';
-import { appendInlineComments } from '@/lib/messages/inlineComments';
 import { renderMagicPrompt } from '@/lib/magicPrompts';
 import { startReviewFlow } from '@/lib/reviewFlow';
 import { getRuntimeKey } from '@/lib/runtime-switch';
@@ -49,7 +48,7 @@ import type { SnippetAutocompleteHandle } from './SnippetAutocomplete';
 import { cn } from "@/lib/utils";
 import { ModelControls } from './ModelControls';
 import { parseAgentMentions } from '@/lib/messages/agentMentions';
-import { StatusRow } from './StatusRow';
+import { ComposerStatusBar } from './ComposerStatusBar';
 import { PendingChangesBar } from './PendingChangesBar';
 import { useChatSurfaceMode } from './useChatSurfaceMode';
 import { MobileAgentButton } from './MobileAgentButton';
@@ -83,6 +82,8 @@ import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { usePermissionStore } from '@/stores/permissionStore';
 import { togglePermissionAutoAccept } from './permissionAutoAccept';
+import { useKeybind } from '@/hooks/useKeybind';
+import { useAuthSessionStore } from '@/lib/runtime-auth-expiry';
 import { extractGitChangedFiles } from './changedFiles';
 import { useI18n } from '@/lib/i18n';
 import { sessionEvents } from '@/lib/sessionEvents';
@@ -226,11 +227,15 @@ const MemoModelControls = React.memo(ModelControls);
 const MemoComposerDictation = React.memo(ComposerDictation);
 const MemoMobileAgentButton = React.memo(MobileAgentButton);
 const MemoMobileModelButton = React.memo(MobileModelButton);
-const MemoStatusRow = React.memo(StatusRow);
+const MemoComposerStatusBar = React.memo(ComposerStatusBar);
 
 interface ChatInputProps {
     onOpenSettings?: () => void;
     scrollToBottom?: () => void;
+    // Queued sends do not create a user row (the queue delivers later), so
+    // the anchor-arming scrollToBottom is wrong for them; this returns the
+    // viewport to the live edge instead.
+    scrollToLatest?: () => void;
     active?: boolean;
     draftPresentationExiting?: boolean;
 }
@@ -249,6 +254,7 @@ const resolveChatDraftIdentity = (sessionId: string | null): ChatDraftIdentity |
 const ChatInputComponent: React.FC<ChatInputProps> = ({
     onOpenSettings,
     scrollToBottom,
+    scrollToLatest,
     active = true,
     draftPresentationExiting = false,
 }) => {
@@ -419,7 +425,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
     const ensureGitStatus = useGitStore((state) => state.ensureStatus);
     const fetchGitStatus = useGitStore((state) => state.fetchStatus);
     const clearGitDiffCache = useGitStore((state) => state.clearDiffCache);
-    const [showAbortStatus, setShowAbortStatus] = React.useState(false);
     const setSessionAutoAccept = usePermissionStore((state) => state.setSessionAutoAccept);
     const [isNarrowComposer, setIsNarrowComposer] = React.useState(false);
     const [attachmentPreview, setAttachmentPreview] = React.useState<ToolPopupContent>({
@@ -697,7 +702,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
             attachments,
         };
     }, [resolveInlineFileMention]);
-    const abortTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
     const prevWasAbortedRef = React.useRef(false);
 
     // Issue linking state
@@ -764,55 +768,8 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
             [inlineDraftKey]
         )
     );
-    const draftSourceKey = useInlineCommentDraftStore(
-        React.useCallback(
-            (state) => {
-                const drafts = inlineDraftKey ? (state.drafts[inlineDraftKey] ?? []) : [];
-                let previewConsole = 0;
-                let previewAnnotation = 0;
-                let review = 0;
-                let terminal = 0;
-                let prComment = 0;
-                let prCheck = 0;
-                for (const draft of drafts) {
-                    if (draft.source === 'preview-console') previewConsole += 1;
-                    else if (draft.source === 'preview-annotation') previewAnnotation += 1;
-                    else if (draft.source === 'terminal') terminal += 1;
-                    else if (draft.source === 'pr-comment') prComment += 1;
-                    else if (draft.source === 'pr-check') prCheck += 1;
-                    else review += 1;
-                }
-                return `${previewConsole}:${previewAnnotation}:${review}:${terminal}:${prComment}:${prCheck}`;
-            },
-            [inlineDraftKey]
-        )
-    );
     const consumeDrafts = useInlineCommentDraftStore((state) => state.consumeDrafts);
-    const removeInlineCommentDraft = useInlineCommentDraftStore((state) => state.removeDraft);
     const hasDrafts = draftCount > 0;
-    const [previewConsoleCount, previewAnnotationCount, reviewCount, terminalContextCount, prCommentCount, prCheckCount] = draftSourceKey.split(':').map((entry) => Number(entry) || 0);
-    const terminalContextDrafts = terminalContextCount > 0
-        ? (inlineDraftKey ? useInlineCommentDraftStore.getState().drafts[inlineDraftKey] ?? [] : []).filter((draft) => draft.source === 'terminal')
-        : [];
-    const removePreviewDrafts = React.useCallback((source: 'preview-console' | 'preview-annotation' | 'pr-comment' | 'pr-check') => {
-        if (!inlineDraftTarget) return;
-        const drafts = useInlineCommentDraftStore.getState().getDrafts(inlineDraftTarget);
-        for (const draft of drafts) {
-            if (draft.source === source) {
-                removeInlineCommentDraft(inlineDraftTarget, draft.id);
-            }
-        }
-    }, [inlineDraftTarget, removeInlineCommentDraft]);
-    // Review comments are the inline-comment drafts that aren't preview sources.
-    const removeReviewDrafts = React.useCallback(() => {
-        if (!inlineDraftTarget) return;
-        const drafts = useInlineCommentDraftStore.getState().getDrafts(inlineDraftTarget);
-        for (const draft of drafts) {
-            if (draft.source !== 'preview-console' && draft.source !== 'preview-annotation' && draft.source !== 'terminal' && draft.source !== 'pr-comment' && draft.source !== 'pr-check') {
-                removeInlineCommentDraft(inlineDraftTarget, draft.id);
-            }
-        }
-    }, [inlineDraftTarget, removeInlineCommentDraft]);
 
     // User message history for up/down arrow navigation.
     // Keep this on a narrow hook instead of full session message records.
@@ -941,12 +898,9 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         const inputSnapshot = getCurrentInputSnapshot();
         if (!inputSnapshot.hasContent || !currentSessionId || !messageQueueTarget) return;
 
-        const drafts = inlineDraftTarget ? consumeDrafts(inlineDraftTarget) : [];
-
-        let messageToQueue = inputSnapshot.message.replace(/^\n+|\n+$/g, '');
-        if (drafts.length > 0) {
-            messageToQueue = appendInlineComments(messageToQueue, drafts);
-        }
+        // Context drafts stay in their store: the send that later delivers the
+        // queue consumes them and attaches them as structured context parts.
+        const messageToQueue = inputSnapshot.message.replace(/^\n+|\n+$/g, '');
         const attachmentsToQueue = sanitizeAttachmentsForSend(attachedFiles);
 
         addToQueue(messageQueueTarget, {
@@ -960,6 +914,12 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
             } : undefined,
         });
 
+        // Sending while the agent works must still take the reader to the
+        // live edge — a queued message produces no user row yet, so the
+        // anchor path has nothing to claim and would leave the viewport
+        // parked mid-history.
+        scrollToLatest?.();
+
         // Clear input and attachments
         // Note: confirmedMentionsRef is NOT cleared here because queued messages
         // are processed later in handleSubmit which reads the ref via extractInlineFileMentions.
@@ -972,7 +932,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         if (!isMobile) {
             composerRef.current?.focus();
         }
-    }, [getCurrentInputSnapshot, currentSessionId, messageQueueTarget, inlineDraftTarget, attachedFiles, sanitizeAttachmentsForSend, addToQueue, clearAttachedFiles, isMobile, consumeDrafts, currentProviderId, currentModelId, currentAgentName, currentVariant]);
+    }, [getCurrentInputSnapshot, currentSessionId, messageQueueTarget, attachedFiles, sanitizeAttachmentsForSend, addToQueue, clearAttachedFiles, isMobile, currentProviderId, currentModelId, currentAgentName, currentVariant, scrollToLatest]);
 
     const handleQueuedMessageEdit = React.useCallback((content: string) => {
         setMessage(content);
@@ -1027,6 +987,14 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         const queuedMessageId = options?.queuedMessageId;
         const delivery = options?.delivery === 'steer' && sessionPhase !== 'idle' ? 'steer' : undefined;
         const capturedTarget = messageQueueTarget;
+        // An expired session cannot deliver anything: keep the prompt in the
+        // composer and point at the login banner instead of burning the send
+        // on a guaranteed 401.
+        if (useAuthSessionStore.getState().state !== 'ok') {
+            toast.error(t('sessionAuth.expired.sendBlocked'));
+            return;
+        }
+
         // Snapshot the draft and current-session identity before the first
         // async gap so a later sidebar selection cannot reroute the send.
         const capturedDraftSnapshot = newSessionDraftOpen ? { ...newSessionDraft } : null;
@@ -1163,9 +1131,11 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         }
 
         // Inline review comments and synthetic context are consumed before
-        // assembly so a failed send can restore exactly what it took.
+        // assembly so a failed send can restore exactly what it took. Context
+        // drafts ride with whichever send goes out next, including queued
+        // auto-sends: queueing leaves them in the store on purpose.
         const syntheticParts = consumePendingSyntheticParts();
-        const consumedDraftTarget = queuedOnly ? null : inlineDraftTarget;
+        const consumedDraftTarget = inlineDraftTarget;
         const drafts: InlineCommentDraft[] = consumedDraftTarget
             ? consumeDrafts(consumedDraftTarget)
             : [];
@@ -1180,9 +1150,11 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
             composerAttachments: attachedFiles,
             inlineComments: drafts,
             syntheticTexts: syntheticParts?.map((part) => part.text) ?? [],
-            linkedIssueContext: linkedIssue?.contextText ?? null,
+            linkedIssue: linkedIssue
+                ? { number: linkedIssue.number, title: linkedIssue.title, url: linkedIssue.url, contextText: linkedIssue.contextText }
+                : null,
             linkedPr: linkedPr
-                ? { instructions: linkedPr.instructionsText, context: linkedPr.contextText }
+                ? { number: linkedPr.number, title: linkedPr.title, url: linkedPr.url, instructions: linkedPr.instructionsText, context: linkedPr.contextText }
                 : null,
         }, {
             parseAgentMention: (text) => {
@@ -1195,8 +1167,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
             },
             sanitizeAttachments: sanitizeAttachmentsForSend,
             collectSkillNames: (text) => collectInlineSkillMentions(text, availableSkillNames),
-            appendComments: (text, comments) =>
-                appendInlineComments(text, comments as InlineCommentDraft[]),
             buildSkillInstruction: buildSkillMentionInstruction,
         });
 
@@ -1361,6 +1331,11 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
             ...additionalParts.flatMap(p => p.attachments ?? []),
         ];
 
+        // Arm the timeline anchor BEFORE the optimistic user row can commit;
+        // arming after (or a frame later) races the commit and the anchor
+        // never claims the new message.
+        scrollToBottom?.();
+
         const sendPromise = sendMessage(
             primaryText,
             providerIdToSend,
@@ -1378,14 +1353,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                 useInlineCommentDraftStore.getState().restoreDrafts(consumedDraftTarget, drafts);
             }
         };
-
-        if (typeof window === 'undefined') {
-            scrollToBottom?.();
-        } else {
-            window.requestAnimationFrame(() => {
-                scrollToBottom?.();
-            });
-        }
 
         void sendPromise.then(() => {
             // Record what this session was pointed at, so the work-status panel
@@ -1446,10 +1413,25 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
             console.error('Message send failed:', rawMessage || error);
             restoreConsumedDrafts();
 
-            const currentInput = composerRef.current?.getValue() ?? messageRef.current;
-            if (newSessionDraftOpen && inputSnapshot.message && (!currentInput || currentInput === inputSnapshot.message)) {
-                setMessage(inputSnapshot.message);
-                writeChatDraft(chatDraftIdentity, inputSnapshot.message, confirmedMentionsRef.current);
+            // A failed send returns the typed prompt no matter WHY it failed —
+            // auth, network, server, anything. Losing a long prompt to a toast
+            // is the one outcome this handler must never produce.
+            if (inputSnapshot.message) {
+                if (currentChatDraftIdentityRef.current !== chatDraftIdentity) {
+                    // The user switched sessions mid-send: restore into that
+                    // session's persisted draft, not the visible composer.
+                    writeChatDraft(chatDraftIdentity, inputSnapshot.message, confirmedMentionsRef.current);
+                } else {
+                    const currentInput = composerRef.current?.getValue() ?? messageRef.current;
+                    if (!currentInput || currentInput === inputSnapshot.message) {
+                        setMessage(inputSnapshot.message);
+                        writeChatDraft(chatDraftIdentity, inputSnapshot.message, confirmedMentionsRef.current);
+                    } else {
+                        // New typing already lives in the composer; the failed
+                        // prompt joins it instead of clobbering either text.
+                        useInputStore.getState().setPendingInputText(inputSnapshot.message, 'append');
+                    }
+                }
             }
 
             const isSoftNetworkError =
@@ -1760,29 +1742,15 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         containerRef: dropZoneRef,
     });
 
-    const startAbortIndicator = React.useCallback(() => {
-        if (abortTimeoutRef.current) {
-            clearTimeout(abortTimeoutRef.current);
-            abortTimeoutRef.current = null;
-        }
-
-        setShowAbortStatus(true);
-
-        abortTimeoutRef.current = setTimeout(() => {
-            setShowAbortStatus(false);
-            abortTimeoutRef.current = null;
-        }, 1800);
-    }, []);
 
     const handleAbort = React.useCallback(() => {
         clearAbortPrompt();
-        startAbortIndicator();
 
         // btw mode: the stop button stops the fork's turn, not the main
         // session's.
         const abortTarget = isBtwActive && btwSessionId ? btwSessionId : currentSessionId;
         void abortCurrentOperation(abortTarget || undefined);
-    }, [abortCurrentOperation, btwSessionId, clearAbortPrompt, currentSessionId, isBtwActive, startAbortIndicator]);
+    }, [abortCurrentOperation, btwSessionId, clearAbortPrompt, currentSessionId, isBtwActive]);
 
     const handleCycleAgent = React.useCallback((direction: 1 | -1 = 1) => {
         const nextAgentName = getCycledPrimaryAgentName(agents, currentAgentName, direction);
@@ -2626,31 +2594,20 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         t,
     ]);
 
-    React.useEffect(() => {
-        const pendingAbortBanner = Boolean(abortPromptSessionId) && abortPromptSessionId === currentSessionId;
-        if (!prevWasAbortedRef.current && pendingAbortBanner && !showAbortStatus) {
-            startAbortIndicator();
-            if (currentSessionId) {
-                acknowledgeSessionAbort(currentSessionId);
-            }
-        }
-        prevWasAbortedRef.current = pendingAbortBanner;
-    }, [
-        abortPromptSessionId,
-        acknowledgeSessionAbort,
-        currentSessionId,
-        showAbortStatus,
-        startAbortIndicator,
-    ]);
+    useKeybind('toggle_permission_auto_accept', () => {
+        if (!isPermissionAutoAcceptInteractive) return false;
+        handlePermissionAutoAcceptToggle();
+    });
 
+    // Acknowledging the abort record is what lets the working chip resume for
+    // the next run; the old "Aborted" banner that used to accompany it is gone.
     React.useEffect(() => {
-        return () => {
-            if (abortTimeoutRef.current) {
-                clearTimeout(abortTimeoutRef.current);
-                abortTimeoutRef.current = null;
-            }
-        };
-    }, []);
+        const pendingAbort = Boolean(abortPromptSessionId) && abortPromptSessionId === currentSessionId;
+        if (!prevWasAbortedRef.current && pendingAbort && currentSessionId) {
+            acknowledgeSessionAbort(currentSessionId);
+        }
+        prevWasAbortedRef.current = pendingAbort;
+    }, [abortPromptSessionId, acknowledgeSessionAbort, currentSessionId]);
 
     return (
         <>
@@ -2686,16 +2643,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                 <AutoReviewBanner />
                 {hasDrafts ? (
                     <ComposerContextChips
-                        terminalDrafts={terminalContextDrafts}
-                        reviewCount={reviewCount}
-                        prCommentCount={prCommentCount}
-                        prCheckCount={prCheckCount}
-                        previewConsoleCount={previewConsoleCount}
-                        previewAnnotationCount={previewAnnotationCount}
                         draftTarget={inlineDraftTarget}
-                        onRemoveDraft={removeInlineCommentDraft}
-                        onRemoveReviewDrafts={removeReviewDrafts}
-                        onRemovePreviewDrafts={removePreviewDrafts}
                         colors={currentTheme.colors}
                     />
                 ) : null}
@@ -2733,9 +2681,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                     sessionId={currentSessionId}
                     directory={currentSessionDirectoryForSync ?? currentDirectory}
                 />
-                <MemoStatusRow
-                    showAbortStatus={showAbortStatus}
-                    showAssistantStatus={false}
+                <MemoComposerStatusBar
                     showTodos={composerStatusExtrasEnabled}
                     leftAccessory={!composerStatusExtrasEnabled || newSessionDraftOpen || !hasPendingChanges
                         ? null
