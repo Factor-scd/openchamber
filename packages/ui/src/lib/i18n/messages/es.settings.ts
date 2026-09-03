@@ -1,3 +1,4 @@
+import { linearIntegrationI18n } from './linear-integration.i18n';
 import { thirdPartyIntegrationI18n } from './third-party-integrations.i18n';
 export const settingsDict = {
   'settings.providers.page.openCodeGo.title': 'Seguimiento de uso de OpenCode Go',
@@ -1923,7 +1924,10 @@ export const settingsDict = {
   "settings.voice.page.provider.server": "Servidor",
   "settings.voice.page.provider.local": "Local",
   "settings.voice.page.tooltip.sttLocal": "Transcripción local en el servidor de OpenChamber. Los modelos se descargan automáticamente; no se necesita clave de API.",
-  "settings.voice.page.tooltip.localTts": "Síntesis local en el servidor de OpenChamber (Kokoro, inglés). El modelo se descarga automáticamente; no se necesita clave de API.",
+  "settings.voice.page.tooltip.localTts": "Síntesis local en el servidor de OpenChamber (Kokoro para inglés; los modelos de otros idiomas se descargan en el primer uso). No requiere clave de API.",
+  "settings.voice.page.field.followTextLanguage": "Ajustar la voz al idioma del texto",
+  "settings.voice.page.field.followTextLanguageAria": "Ajustar la voz al idioma del texto",
+  "settings.voice.page.field.followTextLanguageInfo": "Si una respuesta está en otro idioma, se usa una voz para ese idioma: una voz de macOS adecuada o un modelo local que se descarga en el primer uso.",
   "settings.voice.page.stt.model.parakeetV2": "Parakeet v2 (inglés)",
   "settings.voice.page.stt.model.parakeetV3": "Parakeet v3 (25 idiomas europeos)",
   "settings.voice.page.stt.model.whisperBase": "Whisper base (multilingüe)",
@@ -2095,6 +2099,9 @@ export const settingsDict = {
   "settings.openchamber.visual.field.activityDefaultModeAria": "Modo predeterminado de actividad: {option}",
   "settings.openchamber.visual.field.showExpandedBashToolsAria": "Mostrar herramientas de Bash expandidas",
   "settings.openchamber.visual.field.showExpandedEditToolsAria": "Mostrar herramientas de edición expandidas",
+  'settings.openchamber.visual.field.expandedEditorToolbarAria': 'Mostrar siempre la barra de herramientas del editor',
+  'settings.openchamber.visual.field.expandedEditorToolbar': 'Mostrar siempre la barra de herramientas del editor (anclada bajo las pestañas)',
+
   "settings.openchamber.visual.field.bash": "Bash",
   "settings.openchamber.visual.field.editTools": "Herramientas de edición",
   "settings.openchamber.visual.field.userMessageRenderingAria": "Renderizado de mensajes del usuario: {option}",
@@ -2320,5 +2327,6 @@ export const settingsDict = {
   "settings.openchamber.visual.field.followUpBehaviorDescription": "Choose what happens when you press Enter on a follow-up message while the agent is still responding.",
   "settings.openchamber.visual.option.followUpBehavior.steer.label": "Steer",
   "settings.openchamber.visual.option.followUpBehavior.queue.label": "Queue",
+  ...linearIntegrationI18n.es,
   ...thirdPartyIntegrationI18n.es,
 } as const;

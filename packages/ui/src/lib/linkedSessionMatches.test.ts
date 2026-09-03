@@ -3,7 +3,7 @@ import { useGiteaAuthStore } from '@/stores/useGiteaAuthStore';
 import { useGitLabAuthStore } from '@/stores/useGitLabAuthStore';
 import { useGitProviderDomainsStore } from '@/stores/useGitProviderDomainsStore';
 import type { ForgeRepoRef } from '@/lib/forge/types';
-import type { LinkedIssue } from '@/lib/linkedIssues';
+import type { LinkedGitHubIssue } from '@/lib/linkedIssues';
 import {
   findLinkedSessionsForEntity,
   linkedEntityCandidateIds,
@@ -26,7 +26,7 @@ const repoRef = (overrides: Partial<ForgeRepoRef> = {}): ForgeRepoRef => ({
   ...overrides,
 });
 
-const linkedIssue = (overrides: Partial<LinkedIssue> = {}): LinkedIssue => ({
+const linkedIssue = (overrides: Partial<LinkedGitHubIssue> = {}): LinkedGitHubIssue => ({
   id: 'owner/widget#42',
   number: 42,
   title: 'Rail badge count',

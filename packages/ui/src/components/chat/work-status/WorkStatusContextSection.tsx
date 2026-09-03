@@ -308,8 +308,8 @@ export const WorkStatusContextSection: React.FC<Props> = ({ sessionId, directory
   // The heading names what is distinctive about this session when there is
   // something — an attached thread — and falls back to the ambient counts
   // when there is not. `1 · 33 · 2` said nothing without opening the section.
-  const issueCount = linked.filter((entry) => entry.kind === 'issue').length;
-  const prCount = linked.length - issueCount;
+  const issueCount = linked.filter((entry) => entry.kind === 'issue' || entry.kind === 'linear').length;
+  const prCount = linked.filter((entry) => entry.kind === 'pull').length;
   const summaryParts: string[] = [];
   if (issueCount > 0) {
     summaryParts.push(issueCount === 1

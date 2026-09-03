@@ -1,8 +1,12 @@
 import type { I18nKey } from './en';
 import { settingsDict } from './es.settings';
+import { linearIssuePickerI18n } from './linear-issue-picker.i18n';
+import { linearPanelI18n } from './linear-panel.i18n';
 
 export const dict: Record<I18nKey, string> = {
   ...settingsDict,
+  ...linearIssuePickerI18n.es,
+  ...linearPanelI18n.es,
   'terminalView.actions.attachSelection': 'Adjuntar salida seleccionada',
   'terminalView.actions.restart': 'Reiniciar terminal',
   'chat.message.terminalContext': '{terminal}, líneas {start}-{end}',
@@ -980,6 +984,10 @@ export const dict: Record<I18nKey, string> = {
   "gitView.empty.worktreeFeaturesUnavailable": "Las características de worktree no están disponibles en este modo de espacio de trabajo.",
   "gitView.empty.worktreeSetupDescription": "Finalizando la configuración de worktree y preparando el estado del repositorio.",
   "gitView.empty.worktreeSetupInProgress": "Configuración de worktree en progreso",
+  "gitView.empty.discoveringRepositories": "Buscando repositorios de Git...",
+  "gitView.empty.discoverFailed": "No se pudo escanear en busca de repositorios de Git",
+  "gitView.empty.retryDiscovery": "Reintentar",
+  "gitView.empty.selectRepositoryPlaceholder": "Selecciona un repositorio...",
   "worktree.bootstrap.toast.failed": "Error al configurar el worktree",
   "worktree.bootstrap.toast.failedDescription": "El worktree se creó, pero la configuración en segundo plano no terminó.",
   "worktree.bootstrap.toast.timeoutDescription": "El worktree se creó, pero la configuración en segundo plano agotó el tiempo de espera.",
@@ -1927,6 +1935,9 @@ export const dict: Record<I18nKey, string> = {
   "header.actions.terminalPanelWithShortcut": "Panel de terminal ({shortcut})",
   "chat.recap.aria": "Resumen de la sesión",
   "chat.recap.label": "Resumen:",
+  "chat.sessionError.title": "OpenCode detuvo esta respuesta",
+  "chat.sessionError.noDetails": "OpenCode no informó detalles. Abre el informe de estado (Ctrl/Cmd+Mayús+L) para ver los errores recientes.",
+  "chat.sessionError.noReply": "OpenCode no comenzó una respuesta a este mensaje.",
   "chat.goal.dialog.titleCreate": "Definir objetivo de sesión",
   "chat.goal.dialog.titleManage": "Objetivo de sesión",
   "chat.goal.dialog.objectiveLabel": "Objetivo",
@@ -2287,6 +2298,9 @@ export const dict: Record<I18nKey, string> = {
   "session.newWorktree.noMatchingBranches": "No hay ramas coincidentes",
   "session.newWorktree.localBranches": "Ramas locales",
   "session.newWorktree.remoteBranches": "Ramas remotas",
+  'session.newWorktree.otherLocalBranches': 'Otras ramas locales',
+  'session.newWorktree.otherRemoteBranches': 'Otras ramas remotas',
+
   "session.newWorktree.branchName": "Nombre de la rama",
   "session.newWorktree.branchNamePlaceholder": "feature/my-awesome-feature",
   "session.newWorktree.actions.change": "Cambiar",

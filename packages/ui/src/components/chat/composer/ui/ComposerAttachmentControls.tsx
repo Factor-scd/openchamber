@@ -29,6 +29,8 @@ type ComposerAttachmentControlsProps = {
     openPrPicker: () => void;
     /** Shows the GitHub issue/PR or GitLab issue/MR attach actions based on the repo provider. */
     gitProvider?: GitProvider | null;
+    showLinearPicker?: boolean;
+    openLinearPicker?: () => void;
     onOpenSettings?: () => void;
     onMenuOpenChange?: (open: boolean) => void;
     /** Mobile: open the attachment bottom sheet instead of the dropdown menu. */
@@ -45,6 +47,8 @@ export const ComposerAttachmentControls = React.memo(function ComposerAttachment
         openIssuePicker,
         openPrPicker,
         gitProvider,
+        showLinearPicker,
+        openLinearPicker,
         onOpenSettings,
     } = props;
 
@@ -160,6 +164,16 @@ export const ComposerAttachmentControls = React.memo(function ComposerAttachment
                                     </DropdownMenuItem>
                                 </>
                             ) : null}
+                            {showLinearPicker && openLinearPicker ? (
+                                <DropdownMenuItem
+                                    onSelect={() => {
+                                        requestAnimationFrame(openLinearPicker);
+                                    }}
+                                >
+                                    <Icon name="linear"/>
+                                    {t('chat.chatInput.actions.linkLinearIssue')}
+                                </DropdownMenuItem>
+                            ) : null}
                         </DropdownMenuContent>
                     </DropdownMenu>
                 )}
@@ -183,6 +197,8 @@ export const ComposerAttachmentControls = React.memo(function ComposerAttachment
     && prev.footerIconButtonClass === next.footerIconButtonClass
     && prev.iconSizeClass === next.iconSizeClass
     && prev.gitProvider === next.gitProvider
+    && prev.showLinearPicker === next.showLinearPicker
+    && prev.openLinearPicker === next.openLinearPicker
     && prev.onOpenSettings === next.onOpenSettings
     && prev.onMenuOpenChange === next.onMenuOpenChange
     && prev.onOpenMobileSheet === next.onOpenMobileSheet

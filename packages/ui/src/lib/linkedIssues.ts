@@ -27,7 +27,7 @@ import { getSessionMetadata, type SessionMetadataRecord } from './sessionReviewM
  * free.
  */
 
-export type LinkedIssue = {
+export type LinkedGitHubIssue = {
   /** `owner/repo#number`, unique per session and stable across renames. */
   id: string;
   number: number;
@@ -45,10 +45,29 @@ export type LinkedIssue = {
   linkedAt: number;
 };
 
+export type LinkedLinearIssue = {
+  /** `linear:{identifier}`, unique per session. */
+  id: string;
+  identifier: string;
+  title: string;
+  url: string;
+  kind: 'linear';
+  author?: string;
+  authorAvatarUrl?: string;
+  /** Present only when a linear issue is also linked to a forge repo. */
+  number?: number;
+  provider?: ForgeProviderKind;
+  repo?: string;
+  host?: string;
+  linkedAt: number;
+};
+
+export type LinkedIssue = LinkedGitHubIssue | LinkedLinearIssue;
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value && typeof value === 'object' && !Array.isArray(value));
 
-const isLinkedIssue = (value: unknown): value is LinkedIssue => (
+const isLinkedGitHubIssue = (value: unknown): value is LinkedGitHubIssue => (
   isRecord(value)
   && typeof value.id === 'string'
   && value.id.length > 0
@@ -61,8 +80,28 @@ const isLinkedIssue = (value: unknown): value is LinkedIssue => (
   && Number.isFinite(value.linkedAt)
 );
 
+const isLinkedLinearIssue = (value: unknown): value is LinkedLinearIssue => (
+  isRecord(value)
+  && typeof value.id === 'string'
+  && value.id.length > 0
+  && typeof value.identifier === 'string'
+  && value.identifier.length > 0
+  && typeof value.title === 'string'
+  && typeof value.url === 'string'
+  && value.kind === 'linear'
+  && typeof value.linkedAt === 'number'
+  && Number.isFinite(value.linkedAt)
+);
+
+const isLinkedIssue = (value: unknown): value is LinkedIssue => (
+  isLinkedGitHubIssue(value) || isLinkedLinearIssue(value)
+);
+
 export const buildLinkedIssueId = (owner: string, repo: string, number: number): string =>
   `${owner}/${repo}#${number}`;
+
+const buildLinkedLinearIssueId = (identifier: string): string =>
+  `linear:${identifier}`;
 
 /**
  * Builds the stored snapshot from what an attach flow already has.
@@ -299,6 +338,35 @@ export const buildLinkedIssue = (input: {
     host: input.host ?? parseGitHost(input.url) ?? undefined,
   };
 };
+
+export const buildLinkedLinearIssue = (input: {
+  identifier: string;
+  title: string;
+  url: string;
+  author?: { login?: string; avatarUrl?: string } | null;
+  linkedAt: number;
+}): LinkedLinearIssue => ({
+  id: buildLinkedLinearIssueId(input.identifier),
+  identifier: input.identifier,
+  title: input.title,
+  url: input.url,
+  kind: 'linear',
+  author: input.author?.login ?? undefined,
+  authorAvatarUrl: input.author?.avatarUrl ?? undefined,
+  linkedAt: input.linkedAt,
+});
+
+export const canOpenLinearIssueInContextPanel = (options: {
+  linearAvailable: boolean;
+  linearConnected: boolean;
+  inDedicatedMobileShell: boolean;
+  directory: string | null | undefined;
+}): boolean => (
+  options.linearAvailable
+  && options.linearConnected
+  && !options.inDedicatedMobileShell
+  && Boolean(options.directory?.trim())
+);
 
 export const getLinkedIssues = (session: Session | null | undefined): LinkedIssue[] => {
   const openchamber = getSessionMetadata(session).openchamber;

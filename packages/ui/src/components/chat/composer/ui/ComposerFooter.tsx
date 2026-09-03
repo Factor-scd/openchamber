@@ -56,6 +56,8 @@ export interface ComposerFooterProps {
     onPickLocalFiles: () => void;
     onOpenIssuePicker: () => void;
     onOpenPrPicker: () => void;
+    showLinearPicker?: boolean;
+    onOpenLinearPicker?: () => void;
     onOpenAttachSheet: () => void;
     onToggleExpandedInput: () => void;
     onTogglePermissionAutoAccept: () => void;
@@ -95,6 +97,8 @@ export function ComposerFooter(props: ComposerFooterProps) {
         onPickLocalFiles,
         onOpenIssuePicker,
         onOpenPrPicker,
+        showLinearPicker,
+        onOpenLinearPicker,
         onOpenAttachSheet,
         onToggleExpandedInput,
         onTogglePermissionAutoAccept,
@@ -134,6 +138,8 @@ export function ComposerFooter(props: ComposerFooterProps) {
                                 openIssuePicker={onOpenIssuePicker}
                                 openPrPicker={onOpenPrPicker}
                                 gitProvider={gitProvider}
+                                showLinearPicker={showLinearPicker}
+                                openLinearPicker={onOpenLinearPicker}
                                 onOpenSettings={onOpenSettings}
                                 onOpenMobileSheet={onOpenAttachSheet}
                             />
@@ -204,6 +210,8 @@ export function ComposerFooter(props: ComposerFooterProps) {
                             openIssuePicker={onOpenIssuePicker}
                             openPrPicker={onOpenPrPicker}
                             gitProvider={gitProvider}
+                            showLinearPicker={showLinearPicker}
+                            openLinearPicker={onOpenLinearPicker}
                             onOpenSettings={onOpenSettings}
                         />
                         <FocusModeButton

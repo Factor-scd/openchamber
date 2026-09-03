@@ -194,6 +194,7 @@ export const GitPage: React.FC<GitPageProps> = (props) => {
 
         <SettingsSection
           title={t('settings.gitIdentities.page.section.title')}
+          divider={false}
           headerAction={(
             <Button size="sm" variant="outline" onClick={() => openEditor('new')}>
               <Icon name="add" className="w-3.5 h-3.5 mr-1" /> {t('settings.common.badge.new')}

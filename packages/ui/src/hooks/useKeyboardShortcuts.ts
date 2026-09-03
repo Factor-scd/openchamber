@@ -31,6 +31,7 @@ import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useGitProvider } from '@/lib/gitProvider';
 import { useFeatureFlagsStore } from '@/stores/useFeatureFlagsStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
+import { useLinearAuthStore } from '@/stores/useLinearAuthStore';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { getCycledPrimaryAgentName } from '@/components/chat/mobileControlsUtils';
 import { focusChatInput } from '@/components/chat/composer/editor/dom';
@@ -56,10 +57,10 @@ export const useKeyboardShortcuts = () => {
   const currentSessionId = useSessionUIStore((s) => s.currentSessionId);
   const currentDirectory = useDirectoryStore((s) => s.currentDirectory);
   const effectiveDirectory = useEffectiveDirectory();
+  const activeProject = useProjectsStore((s) => s.getActiveProject());
   // Mirrors the rail's provider-aware 'pr' surface: the digit-shortcut list
   // must agree with the rail on whether the PR/MR surface is visible.
   const gitProvider = useGitProvider(effectiveDirectory);
-  const activeProject = useProjectsStore((s) => s.getActiveProject());
   const { themeMode, setThemeMode } = useThemeSystem();
   const { phase: sessionPhase } = useCurrentSessionActivity();
   const abortPrimedUntilRef = React.useRef<number | null>(null);
@@ -509,6 +510,7 @@ export const useKeyboardShortcuts = () => {
             isVSCode: isVSCodeRuntime(),
             screenWidth: window.innerWidth,
             tabs: panel?.tabs ?? [],
+            linearConnected: useLinearAuthStore.getState().status?.connected === true,
             gitProvider,
           });
           const target = visibleSurfaces[switchSurfaceDigit - 1];

@@ -1,8 +1,12 @@
 import type { I18nKey } from './en';
 import { settingsDict } from './ja.settings';
+import { linearIssuePickerI18n } from './linear-issue-picker.i18n';
+import { linearPanelI18n } from './linear-panel.i18n';
 
 export const dict: Record<I18nKey, string> = {
   ...settingsDict,
+  ...linearIssuePickerI18n.ja,
+  ...linearPanelI18n.ja,
   'terminalView.actions.attachSelection': '選択した出力を添付',
   'terminalView.actions.restart': 'ターミナルを再起動',
   'chat.message.terminalContext': '{terminal}、{start}〜{end}行',
@@ -976,6 +980,10 @@ export const dict: Record<I18nKey, string> = {
   'gitView.empty.worktreeFeaturesUnavailable': 'このワークスペースモードではワークツリー機能は利用できません。',
   'gitView.empty.worktreeSetupDescription': 'ワークツリーのセットアップを完了し、リポジトリ状態を準備中。',
   'gitView.empty.worktreeSetupInProgress': 'ワークツリーのセットアップ進行中',
+  'gitView.empty.discoveringRepositories': 'Git リポジトリを検索しています...',
+  'gitView.empty.discoverFailed': 'Git リポジトリを検索できませんでした',
+  'gitView.empty.retryDiscovery': '再試行',
+  'gitView.empty.selectRepositoryPlaceholder': 'リポジトリを選択...',
   'worktree.bootstrap.toast.failed': 'ワークツリーのセットアップに失敗しました',
   'worktree.bootstrap.toast.failedDescription': 'ワークツリーは作成されましたが、バックグラウンドセットアップが完了しませんでした。',
   'worktree.bootstrap.toast.timeoutDescription': 'ワークツリーは作成されましたが、バックグラウンドセットアップがタイムアウトしました。',
@@ -1945,6 +1953,9 @@ export const dict: Record<I18nKey, string> = {
   'header.actions.terminalPanelWithShortcut': 'ターミナルパネル（{shortcut}）',
   'chat.recap.aria': 'セッションの要約',
   'chat.recap.label': '要約:',
+  'chat.sessionError.title': 'OpenCode がこの返答を停止しました',
+  'chat.sessionError.noDetails': 'OpenCode から詳細は報告されませんでした。ステータスレポート（Ctrl/Cmd+Shift+L）で最近のエラーを確認してください。',
+  'chat.sessionError.noReply': 'OpenCode はこのメッセージへの返答を開始しませんでした。',
   'chat.goal.dialog.titleCreate': 'セッションゴールを設定',
   'chat.goal.dialog.titleManage': 'セッションゴール',
   'chat.goal.dialog.objectiveLabel': '目標',
@@ -2305,6 +2316,9 @@ export const dict: Record<I18nKey, string> = {
   'session.newWorktree.noMatchingBranches': '一致するブランチがありません',
   'session.newWorktree.localBranches': 'ローカルブランチ',
   'session.newWorktree.remoteBranches': 'リモートブランチ',
+  'session.newWorktree.otherLocalBranches': 'その他のローカルブランチ',
+  'session.newWorktree.otherRemoteBranches': 'その他のリモートブランチ',
+
   'session.newWorktree.branchName': 'ブランチ名',
   'session.newWorktree.branchNamePlaceholder': 'feature/my-awesome-feature',
   'session.newWorktree.actions.change': '変更',

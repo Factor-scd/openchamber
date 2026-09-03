@@ -64,7 +64,7 @@ export function GitLabIntegrationDialog({
   const setSettingsDialogOpen = useUIStore((state) => state.setSettingsDialogOpen);
   const setSettingsPage = useUIStore((state) => state.setSettingsPage);
   const activeProject = useProjectsStore((state) => state.getActiveProject());
-  
+
   const projectDirectory = activeProject?.path ?? null;
   const projectRef: ProjectRef | null = React.useMemo(() => {
     if (projectDirectory && activeProject) {
@@ -93,12 +93,12 @@ export function GitLabIntegrationDialog({
   const loadData = React.useCallback(async (query?: string) => {
     if (!projectDirectory || !gitlab) return;
     if (gitlabAuthChecked && gitlabAuthStatus?.connected === false) return;
-    
+
     setLoading(true);
     setError(null);
     setPage(1);
     setHasMore(false);
-    
+
     try {
       if (activeTab === 'issues' && gitlab.issuesList) {
         const result = await gitlab.issuesList(projectDirectory, { page: 1, query });
@@ -192,12 +192,12 @@ export function GitLabIntegrationDialog({
     if (!projectDirectory || !gitlab) return;
     if (loading || loadingMore) return;
     if (!hasMore) return;
-    
+
     setLoadingMore(true);
-    
+
     try {
       const nextPage = page + 1;
-      
+
       if (activeTab === 'issues' && gitlab.issuesList) {
         const result = debouncedSearchQuery.trim()
           ? await gitlab.issuesList(projectDirectory, { page: nextPage, query: debouncedSearchQuery.trim() })
@@ -240,26 +240,26 @@ export function GitLabIntegrationDialog({
       setHasMore(false);
       return;
     }
-    
+
     void loadData();
   }, [open, loadData]);
 
   // Validate branches for worktree creation
   const validateBranch = React.useCallback(async (branchName: string) => {
     if (!projectRef || !branchName) return;
-    
+
     // Check cache first
     if (validations.has(branchName)) return;
-    
+
     try {
       const result = await validateWorktreeCreate(projectRef, {
         mode: 'new',
         branchName,
         worktreeName: branchName,
       });
-      
+
       const blockingError = result.errors.find((entry) => entry.code === 'branch_in_use');
-      
+
       setValidations(prev => new Map(prev).set(branchName, {
         isValid: !blockingError,
         error: blockingError
@@ -279,7 +279,7 @@ export function GitLabIntegrationDialog({
   // Validate MR branches when loaded
   React.useEffect(() => {
     if (!open || activeTab !== 'mrs') return;
-    
+
     mrs.forEach(mr => {
       if (mr.sourceBranch) {
         void validateBranch(mr.sourceBranch);
@@ -420,7 +420,7 @@ export function GitLabIntegrationDialog({
                       {t('session.gitlabIntegration.empty.noIssuesFound')}
                     </div>
                   )}
-                  
+
                   {hasMore && !loadingMore && (
                     <div className="flex justify-center pt-2">
                       <Button
@@ -448,7 +448,7 @@ export function GitLabIntegrationDialog({
                     mrs.map(mr => {
                       const blocked = isMrBlocked(mr);
                       const validation = mr.sourceBranch ? validations.get(mr.sourceBranch) : undefined;
-                      
+
                       return (
                         <button
                           key={mr.number}
@@ -492,7 +492,7 @@ export function GitLabIntegrationDialog({
                       {t('session.gitlabIntegration.empty.noMergeRequestsFound')}
                     </div>
                   )}
-                  
+
                   {hasMore && !loadingMore && (
                     <div className="flex justify-center pt-2">
                       <Button
@@ -547,7 +547,7 @@ export function GitLabIntegrationDialog({
             </button>
           </div>
         )}
-        
+
         {/* Include Diff Checkbox - only show when MR tab is active and MR is selected */}
         {activeTab === 'mrs' && selectedMr && (
           <label className="flex items-center gap-2 cursor-pointer h-8">
@@ -562,7 +562,7 @@ export function GitLabIntegrationDialog({
           </label>
         )}
       </div>
-      
+
       {/* Right side: Buttons */}
       <div className={cn(
         'flex gap-2',
@@ -618,7 +618,7 @@ export function GitLabIntegrationDialog({
                   layoutMode="fit"
                 />
               </div>
-              
+
               {/* Selected Item Inline Display */}
               {(selectedIssue || selectedMr) && (
                 <div className="flex items-center gap-2 px-2 py-1 rounded-md bg-muted/50 border border-border/50">
@@ -650,7 +650,7 @@ export function GitLabIntegrationDialog({
                   <Icon name="gitlab" className="h-5 w-5" />
                   {t('session.gitlabIntegration.title')}
                 </DialogTitle>
-                
+
                 {/* Tabs - using SortableTabsStrip */}
                 <div className="w-[220px]">
                   <SortableTabsStrip

@@ -37,6 +37,8 @@ import {
 import { cn } from '@/lib/utils';
 import { useFeatureFlagsStore } from '@/stores/useFeatureFlagsStore';
 import { useGitStatus } from '@/stores/useGitStore';
+import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
+import { useLinearAuthStore } from '@/stores/useLinearAuthStore';
 import { normalizeContextPanelDirectoryKey, useUIStore } from '@/stores/useUIStore';
 import { ContextRailSurfacesDialog } from './ContextRailSurfacesDialog';
 
@@ -167,8 +169,13 @@ export const ContextPanelRail: React.FC = () => {
   const contextRailHiddenSurfaces = useUIStore((state) => state.contextRailHiddenSurfaces);
   const setContextRailOrder = useUIStore((state) => state.setContextRailOrder);
   const openContextSurface = useUIStore((state) => state.openContextSurface);
+  const closeContextPanel = useUIStore((state) => state.closeContextPanel);
   const shortcutOverrides = useUIStore((state) => state.shortcutOverrides);
   const planModeEnabled = useFeatureFlagsStore((state) => state.planModeEnabled);
+  const linearAuthChecked = useLinearAuthStore((state) => state.hasChecked);
+  const linearConnected = useLinearAuthStore((state) => state.status?.connected === true);
+  const githubAuthChecked = useGitHubAuthStore((state) => state.hasChecked);
+  const githubConnected = useGitHubAuthStore((state) => state.status?.connected === true);
   const { screenWidth } = useDeviceInfo();
   const gitStatus = useGitStatus(directoryKey || null);
   // Provider-aware 'pr' branding: GitLab repositories get the MR descriptor
@@ -268,9 +275,27 @@ export const ContextPanelRail: React.FC = () => {
       isVSCode: isVSCodeRuntime(),
       screenWidth,
       tabs,
+      linearConnected,
       gitProvider,
     });
-  }, [contextRailHiddenSurfaces, contextRailOrder, gitProvider, planModeEnabled, screenWidth, tabs]);
+  }, [contextRailHiddenSurfaces, contextRailOrder, gitProvider, linearConnected, planModeEnabled, screenWidth, tabs]);
+
+  // A surface whose integration disconnected closes rather than lingering as
+  // an active panel with no rail icon.
+  React.useEffect(() => {
+    if (!directoryKey || !linearAuthChecked || linearConnected || activeMode !== 'linear') {
+      return;
+    }
+    closeContextPanel(directoryKey);
+  }, [activeMode, closeContextPanel, directoryKey, linearAuthChecked, linearConnected]);
+
+  React.useEffect(() => {
+    if (!directoryKey || !githubAuthChecked || githubConnected || activeMode !== 'pr') {
+      return;
+    }
+    closeContextPanel(directoryKey);
+  }, [activeMode, closeContextPanel, directoryKey, githubAuthChecked, githubConnected]);
+>>>>>>> origin/release/v1.22.0
 
   const [isSurfacesDialogOpen, setIsSurfacesDialogOpen] = React.useState(false);
 

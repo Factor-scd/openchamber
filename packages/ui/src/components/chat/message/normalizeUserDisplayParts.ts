@@ -10,6 +10,9 @@ import {
     startsWithForgeContextPrefix,
 } from '@/lib/messages/synthetic';
 
+
+const LINEAR_ISSUE_CONTEXT_PREFIX = 'Linear issue context (JSON)';
+
 type IssueContextPayload = {
     issue?: {
         number?: unknown;
@@ -21,6 +24,14 @@ type IssueContextPayload = {
 type GitHubPrContextPayload = {
     pr?: {
         number?: unknown;
+        title?: unknown;
+        url?: unknown;
+    };
+};
+
+type LinearIssueContextPayload = {
+    issue?: {
+        identifier?: unknown;
         title?: unknown;
         url?: unknown;
     };
@@ -97,6 +108,25 @@ const buildForgeAttachmentPart = (text: string): Part | null => {
             type: 'file',
             mime: 'application/vnd.github.pull-request-link',
             filename: `PR #${number}: ${title}`,
+            url,
+        } as Part;
+    }
+
+    // Linear issues
+    const linearPayload = parseSyntheticJsonPayload<LinearIssueContextPayload>(text, LINEAR_ISSUE_CONTEXT_PREFIX);
+    if (linearPayload) {
+        const issue = linearPayload.issue;
+        const identifier = issue?.identifier;
+        const title = issue?.title;
+        const url = issue?.url;
+        if (typeof identifier !== 'string' || identifier.trim().length === 0 || typeof title !== 'string' || typeof url !== 'string') {
+            return null;
+        }
+
+        return {
+            type: 'file',
+            mime: 'application/vnd.openchamber.linear-issue-link',
+            filename: `${identifier}: ${title}`,
             url,
         } as Part;
     }
@@ -199,7 +229,8 @@ export const normalizeUserDisplayParts = (parts: Part[], options?: { planModeEna
 
             const normalizedText = text.trimStart();
             return shouldKeepSyntheticUserText(text, planModeEnabled)
-                || startsWithForgeContextPrefix(normalizedText);
+                || startsWithForgeContextPrefix(normalizedText)
+                || normalizedText.startsWith(LINEAR_ISSUE_CONTEXT_PREFIX);
         })
         .map((part) => {
             const rawPart = part as Record<string, unknown>;
@@ -212,10 +243,18 @@ export const normalizeUserDisplayParts = (parts: Part[], options?: { planModeEna
 
                 if (synthetic) {
                     const contextPayload = readContextPart(part);
-                    if (contextPayload?.kind === 'github-issue' || contextPayload?.kind === 'github-pr') {
+                    if (contextPayload?.kind === 'github-issue' || contextPayload?.kind === 'github-pr' || contextPayload?.kind === 'linear-issue') {
                         // SAFETY: same display-only file-part shape the legacy
                         // buildGitHubAttachmentPart produces; consumed by
                         // FileAttachment, which matches on the mime type.
+                        if (contextPayload.kind === 'linear-issue') {
+                            return {
+                                type: 'file',
+                                mime: 'application/vnd.openchamber.linear-issue-link',
+                                filename: `${contextPayload.identifier}: ${contextPayload.title}`,
+                                url: contextPayload.url,
+                            } as Part;
+                        }
                         return {
                             type: 'file',
                             mime: contextPayload.kind === 'github-issue'

@@ -2,10 +2,11 @@ import React from 'react';
 import { Icon } from '@/components/icon/Icon';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
+import { useNestedGitDirectory } from '@/hooks/useNestedGitDirectory';
 import { useDetectedWorktreeMetadata } from '@/hooks/useDetectedWorktreeRoot';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSessionWorktreeStore } from '@/sync/session-worktree-store';
-import { useGitStatus, useGitBranches, useGitStore } from '@/stores/useGitStore';
+import { useGitStatus, useGitBranches, useGitStore, useIsGitRepo } from '@/stores/useGitStore';
 import { useShallow } from 'zustand/react/shallow';
 import { getRootBranch } from '@/lib/worktrees/worktreeStatus';
 import { getRuntimeKey } from '@/lib/runtime-switch';
@@ -15,6 +16,8 @@ import { ScrollShadow } from '@/components/ui/ScrollShadow';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { SortableTabsStrip } from '@/components/ui/sortable-tabs-strip';
 import { PullRequestSection } from './git/PullRequestSection';
+import { NestedRepoResolutionStates } from './git/NestedRepoResolutionStates';
+import { NestedRepoPicker } from './git/NestedRepoPicker';
 import { GitHubIssuesSection } from './git/GitHubIssuesSection';
 import { deriveBaseBranch } from './git/baseBranch';
 
@@ -38,9 +41,17 @@ export const PullRequestView: React.FC = () => {
   const { t } = useI18n();
   const { git } = useRuntimeAPIs();
   const currentDirectory = useEffectiveDirectory();
-  const status = useGitStatus(currentDirectory ?? null);
-  const branches = useGitBranches(currentDirectory ?? null);
-  const { ensureAll } = useGitStore(useShallow((state) => ({ ensureAll: state.ensureAll })));
+  // When the root is not itself a repository, the pull-request workflow
+  // operates on the resolved nested repository instead.
+  const { rootIsGitRepo, gitDirectory, nestedRepos } = useNestedGitDirectory(currentDirectory ?? null);
+  const status = useGitStatus(gitDirectory ?? null);
+  const branches = useGitBranches(gitDirectory ?? null);
+  const isGitRepo = useIsGitRepo(gitDirectory ?? null);
+  const { ensureAll, ensureNestedRepos, selectNestedRepo } = useGitStore(useShallow((state) => ({
+    ensureAll: state.ensureAll,
+    ensureNestedRepos: state.ensureNestedRepos,
+    selectNestedRepo: state.selectNestedRepo,
+  })));
 
   const currentSessionId = useSessionUIStore((s) => s.currentSessionId);
   const newSessionDraft = useSessionUIStore((s) => s.newSessionDraft);
@@ -91,11 +102,11 @@ export const PullRequestView: React.FC = () => {
   const worktreeMetadata = useDetectedWorktreeMetadata(currentDirectory, storeWorktreeMetadata, status?.current ?? undefined);
 
   React.useEffect(() => {
-    if (!currentDirectory || !git) {
+    if (!gitDirectory || !git) {
       return;
     }
-    void ensureAll(currentDirectory, git);
-  }, [currentDirectory, ensureAll, git]);
+    void ensureAll(gitDirectory, git);
+  }, [gitDirectory, ensureAll, git]);
 
   const [rootBranchHint, setRootBranchHint] = React.useState<string | null>(null);
   React.useEffect(() => {
@@ -124,52 +135,52 @@ export const PullRequestView: React.FC = () => {
   }, [authoritativeProjectRoot, worktreeMetadata?.projectDirectory]);
 
   const [remotes, setRemotes] = React.useState<GitRemote[]>(() =>
-    (currentDirectory ? remotesCacheByDirectory.get(remoteCacheKey(currentDirectory)) : undefined) ?? []
+    (gitDirectory ? remotesCacheByDirectory.get(remoteCacheKey(gitDirectory)) : undefined) ?? []
   );
   const [remoteUrl, setRemoteUrl] = React.useState<string | null>(() =>
-    (currentDirectory ? remoteUrlCacheByDirectory.get(remoteCacheKey(currentDirectory)) : undefined) ?? null
+    (gitDirectory ? remoteUrlCacheByDirectory.get(remoteCacheKey(gitDirectory)) : undefined) ?? null
   );
   React.useEffect(() => {
-    if (!currentDirectory || !git?.getRemotes) {
+    if (!gitDirectory || !git?.getRemotes) {
       setRemotes([]);
       return;
     }
 
-    setRemotes(remotesCacheByDirectory.get(remoteCacheKey(currentDirectory)) ?? []);
+    setRemotes(remotesCacheByDirectory.get(remoteCacheKey(gitDirectory)) ?? []);
     let cancelled = false;
-    void git.getRemotes(currentDirectory)
+    void git.getRemotes(gitDirectory)
       .then((remoteList) => {
         if (cancelled) return;
-        remotesCacheByDirectory.set(remoteCacheKey(currentDirectory), remoteList ?? []);
+        remotesCacheByDirectory.set(remoteCacheKey(gitDirectory), remoteList ?? []);
         setRemotes(remoteList ?? []);
       })
-      .catch(() => { if (!cancelled) setRemotes(remotesCacheByDirectory.get(remoteCacheKey(currentDirectory)) ?? []); });
+      .catch(() => { if (!cancelled) setRemotes(remotesCacheByDirectory.get(remoteCacheKey(gitDirectory)) ?? []); });
 
     return () => {
       cancelled = true;
     };
-  }, [currentDirectory, git]);
+  }, [gitDirectory, git]);
 
   React.useEffect(() => {
-    if (!currentDirectory || !git?.getRemoteUrl) {
+    if (!gitDirectory || !git?.getRemoteUrl) {
       setRemoteUrl(null);
       return;
     }
 
-    setRemoteUrl(remoteUrlCacheByDirectory.get(remoteCacheKey(currentDirectory)) ?? null);
+    setRemoteUrl(remoteUrlCacheByDirectory.get(remoteCacheKey(gitDirectory)) ?? null);
     let cancelled = false;
-    void git.getRemoteUrl(currentDirectory)
+    void git.getRemoteUrl(gitDirectory)
       .then((url) => {
         if (cancelled) return;
-        remoteUrlCacheByDirectory.set(remoteCacheKey(currentDirectory), url);
+        remoteUrlCacheByDirectory.set(remoteCacheKey(gitDirectory), url);
         setRemoteUrl(url);
       })
-      .catch(() => { if (!cancelled) setRemoteUrl(remoteUrlCacheByDirectory.get(remoteCacheKey(currentDirectory)) ?? null); });
+      .catch(() => { if (!cancelled) setRemoteUrl(remoteUrlCacheByDirectory.get(remoteCacheKey(gitDirectory)) ?? null); });
 
     return () => {
       cancelled = true;
     };
-  }, [currentDirectory, git]);
+  }, [gitDirectory, git]);
 
   const localBranches = React.useMemo(() => {
     if (!branches?.all) return [];
@@ -261,6 +272,27 @@ export const PullRequestView: React.FC = () => {
     return prEmptyState;
   }
 
+  // Non-repo root: surface nested-repository resolution while the operating
+  // directory has not proven to be a repository (discovering, failed,
+  // unsupported, none found, or settling on the auto-selected one).
+  if (rootIsGitRepo === false && isGitRepo !== true) {
+    return (
+      <NestedRepoResolutionStates
+        rootIsGitRepo={rootIsGitRepo}
+        resolvedIsGitRepo={isGitRepo}
+        nestedRepos={nestedRepos}
+        onRetryDiscovery={() => {
+          void ensureNestedRepos(currentDirectory, { force: true });
+        }}
+      />
+    );
+  }
+
+  // Repository switcher for non-repo roots with discovered nested
+  // repositories; the pick is shared per root across git surfaces.
+  const showRepositoryPicker =
+    rootIsGitRepo === false && Array.isArray(nestedRepos) && nestedRepos.length > 0;
+
   return (
     <ScrollableOverlay
       as={ScrollShadow}
@@ -270,6 +302,18 @@ export const PullRequestView: React.FC = () => {
       preventOverscroll
     >
       <div className="flex h-full min-h-0 flex-col gap-4">
+        {showRepositoryPicker ? (
+          <div className="flex shrink-0 items-center border-b border-border/60 px-4 py-2">
+            <NestedRepoPicker
+              repositories={nestedRepos}
+              selectedRepository={gitDirectory ?? null}
+              onSelectRepository={(repository) => {
+                if (currentDirectory) selectNestedRepo(currentDirectory, repository);
+              }}
+              repositoryRoot={currentDirectory ?? undefined}
+            />
+          </div>
+        ) : null}
         <div className="flex h-8 min-w-0">
           <SortableTabsStrip
             className="h-full"
@@ -288,7 +332,7 @@ export const PullRequestView: React.FC = () => {
         {activeTab === 'pr' ? (
           currentBranch ? (
             <PullRequestSection
-              directory={currentDirectory}
+              directory={gitDirectory ?? currentDirectory}
               branch={currentBranch}
               baseBranch={baseBranch}
               trackingBranch={status?.tracking ?? undefined}

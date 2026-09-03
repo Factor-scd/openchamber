@@ -39,6 +39,8 @@ export interface MobilePillComposerProps {
     onPickLocalFiles: () => void;
     onOpenIssuePicker: () => void;
     onOpenPrPicker: () => void;
+    showLinearPicker?: boolean;
+    onOpenLinearPicker?: () => void;
     onOpenAttachSheet: () => void;
     onStartDictation: () => void;
     onAbort: () => void;
@@ -64,6 +66,8 @@ export function MobilePillComposer(props: MobilePillComposerProps) {
         onPickLocalFiles,
         onOpenIssuePicker,
         onOpenPrPicker,
+        showLinearPicker,
+        onOpenLinearPicker,
         onOpenAttachSheet,
         onStartDictation,
         onAbort,
@@ -99,6 +103,8 @@ export function MobilePillComposer(props: MobilePillComposerProps) {
                     openIssuePicker={onOpenIssuePicker}
                     openPrPicker={onOpenPrPicker}
                     gitProvider={gitProvider}
+                    showLinearPicker={showLinearPicker}
+                    openLinearPicker={onOpenLinearPicker}
                     onOpenMobileSheet={onOpenAttachSheet}
                 />
                 <button

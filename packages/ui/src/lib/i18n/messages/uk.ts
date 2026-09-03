@@ -1,8 +1,12 @@
 import type { I18nKey } from './en';
 import { settingsDict } from './uk.settings';
+import { linearIssuePickerI18n } from './linear-issue-picker.i18n';
+import { linearPanelI18n } from './linear-panel.i18n';
 
 export const dict: Record<I18nKey, string> = {
   ...settingsDict,
+  ...linearIssuePickerI18n.uk,
+  ...linearPanelI18n.uk,
   'terminalView.actions.attachSelection': 'Прикріпити вибраний вивід',
   'terminalView.actions.restart': 'Перезапустити термінал',
   'chat.message.terminalContext': '{terminal}, рядки {start}-{end}',
@@ -980,6 +984,10 @@ export const dict: Record<I18nKey, string> = {
   "gitView.empty.worktreeFeaturesUnavailable": "У цьому режимі робочої області функції worktree недоступні.",
   "gitView.empty.worktreeSetupDescription": "Завершення налаштування worktree та підготовка стану сховища.",
   "gitView.empty.worktreeSetupInProgress": "Виконується налаштування worktree",
+  "gitView.empty.discoveringRepositories": "Пошук репозиторіїв Git...",
+  "gitView.empty.discoverFailed": "Не вдалося просканувати репозиторії Git",
+  "gitView.empty.retryDiscovery": "Повторити",
+  "gitView.empty.selectRepositoryPlaceholder": "Виберіть репозиторій...",
   "worktree.bootstrap.toast.failed": "Не вдалося налаштувати worktree",
   "worktree.bootstrap.toast.failedDescription": "Worktree створено, але фонове налаштування не завершилося.",
   "worktree.bootstrap.toast.timeoutDescription": "Worktree створено, але час очікування фонового налаштування минув.",
@@ -1927,6 +1935,9 @@ export const dict: Record<I18nKey, string> = {
   "header.actions.terminalPanelWithShortcut": "Термінальна панель ({shortcut})",
   "chat.recap.aria": "Підсумок сесії",
   "chat.recap.label": "Підсумок:",
+  "chat.sessionError.title": "OpenCode зупинив цю відповідь",
+  "chat.sessionError.noDetails": "OpenCode не повідомив деталей. Відкрий звіт про стан (Ctrl/Cmd+Shift+L), щоб побачити останні помилки.",
+  "chat.sessionError.noReply": "OpenCode не почав відповідь на це повідомлення.",
   "chat.goal.dialog.titleCreate": "Встановити ціль сесії",
   "chat.goal.dialog.titleManage": "Ціль сесії",
   "chat.goal.dialog.objectiveLabel": "Ціль",
@@ -2287,6 +2298,9 @@ export const dict: Record<I18nKey, string> = {
   "session.newWorktree.noMatchingBranches": "Немає відповідних гілок",
   "session.newWorktree.localBranches": "Локальні гілки",
   "session.newWorktree.remoteBranches": "Віддалені гілки",
+  'session.newWorktree.otherLocalBranches': 'Інші локальні гілки',
+  'session.newWorktree.otherRemoteBranches': 'Інші віддалені гілки',
+
   "session.newWorktree.branchName": "Назва гілки",
   "session.newWorktree.branchNamePlaceholder": "feature/my-awesome-feature",
   "session.newWorktree.actions.change": "Змінити",

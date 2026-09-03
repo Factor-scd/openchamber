@@ -1,3 +1,4 @@
+import { linearIntegrationI18n } from './linear-integration.i18n';
 import { thirdPartyIntegrationI18n } from './third-party-integrations.i18n';
 export const settingsDict = {
   'settings.providers.page.openCodeGo.title': 'OpenCode Go usage tracking',
@@ -1946,7 +1947,10 @@ export const settingsDict = {
   'settings.voice.page.provider.server': 'Server',
   'settings.voice.page.provider.local': 'Local',
   'settings.voice.page.tooltip.sttLocal': 'On-device transcription on the OpenChamber server. Models download automatically; no API key needed.',
-  'settings.voice.page.tooltip.localTts': 'On-device synthesis on the OpenChamber server (Kokoro, English). The model downloads automatically; no API key needed.',
+  'settings.voice.page.tooltip.localTts': 'On-device synthesis on the OpenChamber server (Kokoro for English; models for other languages download on first use). No API key needed.',
+  'settings.voice.page.field.followTextLanguage': 'Match the voice to the language of the text',
+  'settings.voice.page.field.followTextLanguageAria': 'Match the voice to the language of the text',
+  'settings.voice.page.field.followTextLanguageInfo': 'When a reply is in another language, a voice for that language is used: a matching macOS voice, or a local model that downloads on first use.',
   'settings.voice.page.stt.model.parakeetV2': 'Parakeet v2 (English)',
   'settings.voice.page.stt.model.parakeetV3': 'Parakeet v3 (25 European languages)',
   'settings.voice.page.stt.model.whisperBase': 'Whisper base (multilingual)',
@@ -2118,6 +2122,9 @@ export const settingsDict = {
   'settings.openchamber.visual.field.activityDefaultModeAria': 'Activity default mode: {option}',
   'settings.openchamber.visual.field.showExpandedBashToolsAria': 'Show expanded bash tools',
   'settings.openchamber.visual.field.showExpandedEditToolsAria': 'Show expanded edit tools',
+  'settings.openchamber.visual.field.expandedEditorToolbarAria': 'Always show editor toolbar',
+  'settings.openchamber.visual.field.expandedEditorToolbar': 'Always show editor toolbar (docked under the file tabs)',
+
   'settings.openchamber.visual.field.bash': 'Bash',
   'settings.openchamber.visual.field.editTools': 'Edit tools',
   'settings.openchamber.visual.field.userMessageRenderingAria': 'User message rendering: {option}',
@@ -2310,5 +2317,6 @@ export const settingsDict = {
   'settings.openchamber.visual.field.followUpBehaviorDescription': 'Choose what happens when you press Enter on a follow-up message while the agent is still responding.',
   'settings.openchamber.visual.option.followUpBehavior.steer.label': 'Steer',
   'settings.openchamber.visual.option.followUpBehavior.queue.label': 'Queue',
+  ...linearIntegrationI18n.en,
   ...thirdPartyIntegrationI18n.en,
 } as const;

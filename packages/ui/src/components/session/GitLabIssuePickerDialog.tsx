@@ -338,9 +338,9 @@ export function GitLabIssuePickerDialog({
         const contextText = buildIssueContextText({ repo: issueRes.repo, issue, comments });
 
         if (onSelect) {
-          onSelect({ 
-            number: issue.number, 
-            title: issue.title, 
+          onSelect({
+            number: issue.number,
+            title: issue.title,
             url: issue.url,
             contextText,
             author: issue.author ? {
