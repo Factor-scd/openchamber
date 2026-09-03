@@ -295,7 +295,6 @@ export const ContextPanelRail: React.FC = () => {
     }
     closeContextPanel(directoryKey);
   }, [activeMode, closeContextPanel, directoryKey, githubAuthChecked, githubConnected]);
->>>>>>> origin/release/v1.22.0
 
   const [isSurfacesDialogOpen, setIsSurfacesDialogOpen] = React.useState(false);
 
