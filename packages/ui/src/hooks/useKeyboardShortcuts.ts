@@ -28,6 +28,7 @@ import { ShortcutRegistry } from '@/lib/shortcuts/registry';
 import { getVisibleContextRailSurfaces } from '@/lib/surfaces/registry';
 import { readEmbeddedThemeSearchParams } from '@/contexts/theme-embedded-bootstrap';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
+import { useGitProvider } from '@/lib/gitProvider';
 import { useFeatureFlagsStore } from '@/stores/useFeatureFlagsStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
@@ -55,6 +56,9 @@ export const useKeyboardShortcuts = () => {
   const currentSessionId = useSessionUIStore((s) => s.currentSessionId);
   const currentDirectory = useDirectoryStore((s) => s.currentDirectory);
   const effectiveDirectory = useEffectiveDirectory();
+  // Mirrors the rail's provider-aware 'pr' surface: the digit-shortcut list
+  // must agree with the rail on whether the PR/MR surface is visible.
+  const gitProvider = useGitProvider(effectiveDirectory);
   const activeProject = useProjectsStore((s) => s.getActiveProject());
   const { themeMode, setThemeMode } = useThemeSystem();
   const { phase: sessionPhase } = useCurrentSessionActivity();
@@ -493,6 +497,7 @@ export const useKeyboardShortcuts = () => {
         && !event.repeat
         && eventMatchesShortcutPrefix(event, switchSurfacePrefix, heldKeysRef.current)
       ) {
+        if (isEditableEventTarget(event.target)) return;
         const state = useUIStore.getState();
         if (!state.isMobile && effectiveDirectory) {
           const directory = normalizeContextPanelDirectoryKey(effectiveDirectory);
@@ -504,6 +509,7 @@ export const useKeyboardShortcuts = () => {
             isVSCode: isVSCodeRuntime(),
             screenWidth: window.innerWidth,
             tabs: panel?.tabs ?? [],
+            gitProvider,
           });
           const target = visibleSurfaces[switchSurfaceDigit - 1];
           if (target) {
@@ -519,6 +525,10 @@ export const useKeyboardShortcuts = () => {
         sessionTabDigit !== null
         && !event.repeat
         && !isVSCodeRuntime()
+        // Typing a digit in a textarea/input must stay text, never a tab
+        // switch: the default prefix here is a bare modifier, so this fires
+        // on plain ctrl/cmd+1 while the composer has focus (#2689).
+        && !isEditableEventTarget(event.target)
         && useUIStore.getState().sessionTabsEnabled
         && eventMatchesShortcutPrefix(
           event,
@@ -564,7 +574,7 @@ export const useKeyboardShortcuts = () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('blur', handleBlur);
     };
-  }, [armAbortPrompt, currentSessionId, dispatcher, effectiveDirectory, resetAbortPriming, selectionToolbarDispatcher, sessionPhase]);
+  }, [armAbortPrompt, currentSessionId, dispatcher, effectiveDirectory, gitProvider, resetAbortPriming, selectionToolbarDispatcher, sessionPhase]);
 
   React.useEffect(() => () => resetAbortPriming(), [resetAbortPriming]);
 };

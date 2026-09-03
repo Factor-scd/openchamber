@@ -258,7 +258,7 @@ export const GitHubSettings: React.FC<{ embedded?: boolean }> = ({ embedded = fa
     }
   }, [runtimeGitHub, setStatus, t]);
 
-  if (isLoading) {
+  if (isLoading && !hasChecked) {
     return null;
   }
 
