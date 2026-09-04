@@ -3,11 +3,11 @@ import { ComposerDictation } from '@/components/dictation/ComposerDictation';
 // sessionStore removed — currentSessionId comes from useSessionUIStore
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useUIStore } from '@/stores/useUIStore';
-import { createMessageQueueTarget, getMessageQueueKey, useMessageQueueStore, type QueuedMessage } from '@/stores/messageQueueStore';
+import { createMessageQueueTarget, getMessageQueueKey, useMessageQueueStore, type QueuedContextPart, type QueuedMessage } from '@/stores/messageQueueStore';
 import { useAutoReviewStore } from '@/stores/useAutoReviewStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSelectionStore } from '@/sync/selection-store';
-import { prepareLocalAttachments, useInputStore } from '@/sync/input-store';
+import { prepareLocalAttachments, useInputStore, type SyntheticContextPart } from '@/sync/input-store';
 import {
     ACCEPTED_ATTACHMENT_EXTENSIONS,
     ATTACHMENT_ACCEPT,
@@ -49,6 +49,7 @@ import type { SnippetAutocompleteHandle } from './SnippetAutocomplete';
 import { cn } from "@/lib/utils";
 import { ModelControls } from './ModelControls';
 import { parseAgentMentions } from '@/lib/messages/agentMentions';
+import { CONTEXT_METADATA_KEY, draftFromContextPayload } from '@/lib/messages/contextParts';
 import { ComposerStatusBar } from './ComposerStatusBar';
 import { PendingChangesBar } from './PendingChangesBar';
 import { useChatColumnSession } from './chatColumnSession';
@@ -138,7 +139,7 @@ import {
     toProjectRelativeMentionPath,
     toServerFileUrl,
 } from './composer/attachments/filePaths';
-import { buildOutgoingMessage } from './composer/submit/buildOutgoingMessage';
+import { buildComposerContext, buildOutgoingMessage } from './composer/submit/buildOutgoingMessage';
 import {
     buildCommandVariables,
     canRunCommand,
@@ -186,7 +187,6 @@ const MAX_MOBILE_COMPOSER_LINES = 16;
  */
 const MOBILE_COMPOSER_BOUND_GAP_PX = 4;
 const EMPTY_QUEUE: QueuedMessage[] = [];
-const EMPTY_SENDING_IDS: string[] = [];
 const COMPACT_CHAT_PLACEHOLDER_MAX_WIDTH = 560;
 const renameFileForAttachmentCitation = (file: File, filename: string): File => {
     if (file.name === filename) {
@@ -214,6 +214,70 @@ const buildSkillMentionInstruction = (skillNames: string[]): string | null => {
     if (skillNames.length === 0) return null;
     const formatted = skillNames.map((name) => `/${name}`).join(', ');
     return `The user explicitly mentioned these skills in their message: ${formatted}. Use the corresponding skill tool when it is relevant to accomplishing the user's request.`;
+};
+
+type LinkedReferenceAuthor = { login: string; avatarUrl?: string };
+type LinkedGitHubIssue = { number: number; title: string; url: string; contextText: string; author?: LinkedReferenceAuthor };
+type LinkedGitHubPr = {
+    number: number;
+    title: string;
+    url: string;
+    head: string;
+    base: string;
+    includeDiff: boolean;
+    instructionsText: string;
+    contextText: string;
+    author?: LinkedReferenceAuthor;
+};
+type LinkedLinearIssueRef = { identifier: string; title: string; url: string; contextText: string; author?: LinkedReferenceAuthor };
+type LinkedReferences = { issue: LinkedGitHubIssue | null; pr: LinkedGitHubPr | null; linear: LinkedLinearIssueRef | null };
+
+/**
+ * Record what a session was pointed at, so the work-status panel can show it
+ * as a context source long after the message scrolled away. A snapshot only —
+ * never re-fetched, never authoritative. Failures are swallowed: the message
+ * went out (or was queued), and a missing bookkeeping entry must not surface
+ * as an error.
+ */
+const recordLinkedReferences = (
+    sessionId: string,
+    directory: Parameters<typeof sessionActions.setLinkedIssue>[1],
+    refs: LinkedReferences,
+) => {
+    const attachedThread = refs.issue
+        ? { attachment: refs.issue, kind: 'issue' as const }
+        : refs.pr
+            ? { attachment: refs.pr, kind: 'pull' as const }
+            : null;
+    if (attachedThread) {
+        void sessionActions.setLinkedIssue(
+            sessionId,
+            directory,
+            buildLinkedIssue({
+                url: attachedThread.attachment.url,
+                number: attachedThread.attachment.number,
+                title: attachedThread.attachment.title,
+                kind: attachedThread.kind,
+                author: attachedThread.attachment.author,
+                linkedAt: Date.now(),
+            }),
+            true,
+        ).catch(() => undefined);
+    }
+    if (refs.linear) {
+        void sessionActions.setLinkedIssue(
+            sessionId,
+            directory,
+            buildLinkedLinearIssue({
+                identifier: refs.linear.identifier,
+                title: refs.linear.title,
+                url: refs.linear.url,
+                author: refs.linear.author,
+                linkedAt: Date.now(),
+            }),
+            true,
+        ).catch(() => undefined);
+    }
 };
 
 const hasUserMessages = (sessionId: string, directory?: string) => {
@@ -726,37 +790,61 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
             attachments,
         };
     }, [resolveInlineFileMention]);
+
+    type DocumentMentionPreparation =
+        | { status: 'ready'; prepared: Map<string, AttachedFile[]> }
+        | { status: 'failed'; filename: string }
+        | { status: 'runtime-changed' };
+
+    /**
+     * Document mentions (`@notes.pdf`) are sent as converted attachments. Their
+     * sources are fetched up front — by the send, or by queueing, since the
+     * server that later delivers a queued message cannot read them.
+     */
+    const prepareDocumentMentions = React.useCallback(async (
+        texts: readonly string[],
+        reservedFilenames: Set<string>,
+        runtimeKey: string,
+    ): Promise<DocumentMentionPreparation> => {
+        const prepared = new Map<string, AttachedFile[]>();
+        for (const rawText of texts) {
+            for (const token of scanMentions(rawText)) {
+                const mention = resolveInlineFileMention(token.name);
+                if (
+                    !mention
+                    || !isDocumentAttachmentFilename(mention.filename)
+                    || prepared.has(mention.serverPath)
+                ) {
+                    continue;
+                }
+                try {
+                    const response = await runtimeFetch('/api/fs/raw', { query: { path: mention.serverPath } });
+                    if (!response.ok) throw new Error(`Failed to read ${mention.filename}`);
+                    const sourceBlob = await response.blob();
+                    if (getRuntimeKey() !== runtimeKey) return { status: 'runtime-changed' };
+                    const source = new File([sourceBlob], mention.filename);
+                    const converted = await prepareLocalAttachments(source, reservedFilenames);
+                    if (!converted || converted.length === 0) throw new Error(`Failed to prepare ${mention.filename}`);
+                    if (getRuntimeKey() !== runtimeKey) return { status: 'runtime-changed' };
+                    prepared.set(mention.serverPath, converted);
+                    for (const attachment of converted) reservedFilenames.add(attachment.filename);
+                } catch {
+                    if (getRuntimeKey() !== runtimeKey) return { status: 'runtime-changed' };
+                    return { status: 'failed', filename: mention.filename };
+                }
+            }
+        }
+        return { status: 'ready', prepared };
+    }, [resolveInlineFileMention]);
     const prevWasAbortedRef = React.useRef(false);
 
     // Issue linking state
     const [issuePickerOpen, setIssuePickerOpen] = React.useState(false);
     const [prPickerOpen, setPrPickerOpen] = React.useState(false);
     const [linearPickerOpen, setLinearPickerOpen] = React.useState(false);
-    const [linkedIssue, setLinkedIssue] = React.useState<{ 
-        number: number; 
-        title: string; 
-        url: string; 
-        contextText: string;
-        author?: { login: string; avatarUrl?: string };
-    } | null>(null);
-    const [linkedPr, setLinkedPr] = React.useState<{
-        number: number;
-        title: string;
-        url: string;
-        head: string;
-        base: string;
-        includeDiff: boolean;
-        instructionsText: string;
-        contextText: string;
-        author?: { login: string; avatarUrl?: string };
-    } | null>(null);
-    const [linkedLinearIssue, setLinkedLinearIssue] = React.useState<{
-        identifier: string;
-        title: string;
-        url: string;
-        contextText: string;
-        author?: { login: string; avatarUrl?: string };
-    } | null>(null);
+    const [linkedIssue, setLinkedIssue] = React.useState<LinkedGitHubIssue | null>(null);
+    const [linkedPr, setLinkedPr] = React.useState<LinkedGitHubPr | null>(null);
+    const [linkedLinearIssue, setLinkedLinearIssue] = React.useState<LinkedLinearIssueRef | null>(null);
 
     // Message queue
     const messageQueueTarget = currentSessionId
@@ -774,8 +862,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         )
     );
     const addToQueue = useMessageQueueStore((state) => state.addToQueue);
-    const clearQueue = useMessageQueueStore((state) => state.clearQueue);
-    const removeFromQueue = useMessageQueueStore((state) => state.removeFromQueue);
+    const takeForSend = useMessageQueueStore((state) => state.takeForSend);
 
     // Inline comment drafts
     const inlineDraftSessionKey = currentSessionId ?? (newSessionDraftOpen ? 'draft' : '');
@@ -921,25 +1008,56 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
     const handleSubmitRef = React.useRef<(options?: SubmitOptions) => Promise<void>>(async () => {});
 
     // Add message to queue instead of sending
-    const handleQueueMessage = React.useCallback(() => {
+    const handleQueueMessage = React.useCallback(async () => {
         const inputSnapshot = getCurrentInputSnapshot();
         if (!inputSnapshot.hasContent || !currentSessionId || !messageQueueTarget) return;
-
-        // Context drafts stay in their store: the send that later delivers the
-        // queue consumes them and attaches them as structured context parts.
+        const queueRuntimeKey = getRuntimeKey();
+        const queueTarget = messageQueueTarget;
+        const queueSessionId = currentSessionId;
         const messageToQueue = inputSnapshot.message.replace(/^\n+|\n+$/g, '');
-        const attachmentsToQueue = sanitizeAttachmentsForSend(attachedFiles);
+        const composerAttachments = sanitizeAttachmentsForSend(attachedFiles);
 
-        addToQueue(messageQueueTarget, {
-            content: messageToQueue,
-            attachments: attachmentsToQueue.length > 0 ? attachmentsToQueue : undefined,
-            sendConfig: currentProviderId && currentModelId ? {
-                providerID: currentProviderId,
-                modelID: currentModelId,
-                agent: currentAgentName ?? undefined,
-                variant: currentVariant ?? undefined,
-            } : undefined,
-        });
+        // A queued message is resolved now, not at delivery: the server that
+        // sends it has no agent list, no confirmed mentions, and no way to read
+        // a document the user named — and the mention must match what was
+        // visible when the user typed it.
+        const documentMentions = await prepareDocumentMentions(
+            [messageToQueue],
+            new Set(composerAttachments.map((attachment) => attachment.filename)),
+            queueRuntimeKey,
+        );
+        if (documentMentions.status === 'runtime-changed') return;
+        if (documentMentions.status === 'failed') {
+            toast.error(t('chat.chatInput.toast.attachNamedFailed', { name: documentMentions.filename }));
+            return;
+        }
+        const { sanitizedText, mention } = parseAgentMentions(messageToQueue, agents);
+        const { attachments: mentionAttachments } = extractInlineFileMentions(sanitizedText, documentMentions.prepared);
+        const availableSkillNames = new Set(
+            selectSkillsForDirectory(useSkillsStore.getState(), currentDirectory).map((skill) => skill.name),
+        );
+        const skillInstruction = buildSkillMentionInstruction(collectInlineSkillMentions(sanitizedText, availableSkillNames));
+
+        // Everything attached to the composer leaves with the message: the
+        // chips are part of what was queued, and come back if it is edited.
+        const syntheticParts = consumePendingSyntheticParts() ?? [];
+        const draftTarget = inlineDraftTarget;
+        const drafts = draftTarget ? consumeDrafts(draftTarget) : [];
+        const linked: LinkedReferences = { issue: linkedIssue, pr: linkedPr, linear: linkedLinearIssue };
+        const context = buildComposerContext({
+            inlineComments: drafts,
+            syntheticTexts: syntheticParts.map((part) => part.text),
+            linkedIssue: linked.issue
+                ? { number: linked.issue.number, title: linked.issue.title, url: linked.issue.url, contextText: linked.issue.contextText }
+                : null,
+            linkedPr: linked.pr
+                ? { number: linked.pr.number, title: linked.pr.title, url: linked.pr.url, instructions: linked.pr.instructionsText, context: linked.pr.contextText }
+                : null,
+            linkedLinearIssue: linked.linear
+                ? { identifier: linked.linear.identifier, title: linked.linear.title, url: linked.linear.url, contextText: linked.linear.contextText }
+                : null,
+        }, skillInstruction);
+        const attachmentsToQueue = [...composerAttachments, ...mentionAttachments];
 
         // Sending while the agent works must still take the reader to the
         // live edge — a queued message produces no user row yet, so the
@@ -947,26 +1065,116 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         // parked mid-history.
         scrollToLatest?.();
 
-        // Clear input and attachments
-        // Note: confirmedMentionsRef is NOT cleared here because queued messages
-        // are processed later in handleSubmit which reads the ref via extractInlineFileMentions.
-        // The ref is cleared in handleSubmit after all queued messages are sent.
+        // Clear the composer. The mentions it had confirmed were resolved
+        // above, so nothing later needs them.
         setMessage('');
-        if (attachmentsToQueue.length > 0) {
+        confirmedMentionsRef.current.clear();
+        if (composerAttachments.length > 0) {
             clearAttachedFiles();
         }
-
+        setLinkedIssue(null);
+        setLinkedPr(null);
+        setLinkedLinearIssue(null);
         if (!isMobile) {
             composerRef.current?.focus();
         }
-    }, [getCurrentInputSnapshot, currentSessionId, messageQueueTarget, attachedFiles, sanitizeAttachmentsForSend, addToQueue, clearAttachedFiles, isMobile, currentProviderId, currentModelId, currentAgentName, currentVariant, scrollToLatest]);
 
-    const handleQueuedMessageEdit = React.useCallback((content: string) => {
-        setMessage(content);
+        try {
+            await addToQueue(queueTarget, {
+                content: messageToQueue,
+                text: sanitizedText,
+                agentMention: mention?.name,
+                attachments: attachmentsToQueue.length > 0 ? attachmentsToQueue : undefined,
+                context: context.length > 0 ? context : undefined,
+                sendConfig: currentProviderId && currentModelId ? {
+                    providerID: currentProviderId,
+                    modelID: currentModelId,
+                    agent: currentAgentName ?? undefined,
+                    variant: currentVariant ?? undefined,
+                } : undefined,
+            });
+        } catch (error) {
+            console.warn('[queue] failed to queue message:', error);
+            toast.error(t('chat.queuedMessage.toast.queueFailed'));
+            // The composer was cleared on queueing; give everything back. The
+            // text is appended if the user has already typed something new.
+            const currentInput = composerRef.current?.getValue() ?? messageRef.current;
+            if (!currentInput) {
+                setMessage(messageToQueue);
+            } else {
+                useInputStore.getState().setPendingInputText(messageToQueue, 'append');
+            }
+            if (composerAttachments.length > 0) {
+                useInputStore.getState().setAttachedFiles([...useInputStore.getState().attachedFiles, ...composerAttachments]);
+            }
+            if (draftTarget && drafts.length > 0) {
+                useInlineCommentDraftStore.getState().restoreDrafts(draftTarget, drafts);
+            }
+            if (syntheticParts.length > 0) {
+                useInputStore.getState().setPendingSyntheticParts(syntheticParts);
+            }
+            setLinkedIssue(linked.issue);
+            setLinkedPr(linked.pr);
+            setLinkedLinearIssue(linked.linear);
+            return;
+        }
+        recordLinkedReferences(queueSessionId, queueTarget.directory, linked);
+    }, [getCurrentInputSnapshot, currentSessionId, messageQueueTarget, attachedFiles, sanitizeAttachmentsForSend, prepareDocumentMentions, extractInlineFileMentions, agents, currentDirectory, consumePendingSyntheticParts, inlineDraftTarget, consumeDrafts, linkedIssue, linkedPr, linkedLinearIssue, scrollToLatest, clearAttachedFiles, isMobile, addToQueue, currentProviderId, currentModelId, currentAgentName, currentVariant, t]);
+
+    /** Put the context a queued message was captured with back on the composer chips. */
+    const restoreQueuedContext = React.useCallback((context: readonly QueuedContextPart[]) => {
+        const synthetic: SyntheticContextPart[] = [];
+        for (const part of context) {
+            if (part.kind === 'synthetic') {
+                synthetic.push({ text: part.text, synthetic: true });
+                continue;
+            }
+            // An instruction is derived from the text, and derived again on send.
+            if (part.kind !== 'context') continue;
+            const payload = part.metadata[CONTEXT_METADATA_KEY];
+            if (payload.kind === 'github-issue') {
+                setLinkedIssue({ number: payload.number, title: payload.title, url: payload.url, contextText: part.text });
+                setLinkedPr(null);
+                setLinkedLinearIssue(null);
+            } else if (payload.kind === 'github-pr') {
+                // The captured context is final: whatever diff it includes is
+                // already in the text, and the branches were not captured.
+                setLinkedPr({
+                    number: payload.number,
+                    title: payload.title,
+                    url: payload.url,
+                    head: '',
+                    base: '',
+                    includeDiff: false,
+                    instructionsText: part.instructions ?? '',
+                    contextText: part.text,
+                });
+                setLinkedIssue(null);
+                setLinkedLinearIssue(null);
+            } else if (payload.kind === 'linear-issue') {
+                setLinkedLinearIssue({ identifier: payload.identifier, title: payload.title, url: payload.url, contextText: part.text });
+                setLinkedIssue(null);
+                setLinkedPr(null);
+            } else {
+                const draft = draftFromContextPayload(payload);
+                if (draft && inlineDraftTarget) {
+                    useInlineCommentDraftStore.getState().addDraft(inlineDraftTarget, draft);
+                }
+            }
+        }
+        if (synthetic.length > 0) {
+            const pending = useInputStore.getState().pendingSyntheticParts ?? [];
+            useInputStore.getState().setPendingSyntheticParts([...pending, ...synthetic]);
+        }
+    }, [inlineDraftTarget]);
+
+    const handleQueuedMessageEdit = React.useCallback((queued: QueuedMessage) => {
+        setMessage(queued.content);
+        restoreQueuedContext(queued.context ?? []);
         setTimeout(() => {
             composerRef.current?.focus();
         }, 0);
-    }, []);
+    }, [restoreQueuedContext]);
 
     const handleQueuedMessageSend = React.useCallback((messageId: string) => {
         // Force-sending from the queue during a busy session counts as steer
@@ -1023,28 +1231,23 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                 hasContent: options.presetText.trim().length > 0 || attachedFiles.length > 0 || hasDrafts,
             }
             : getCurrentInputSnapshot();
-        // A queued item stays in the queue until its own send resolves, so the
-        // auto-send hook may already be delivering one of these. Merging it here
-        // would send the same message twice (the window is seconds over a relay).
-        const sendingIds = messageQueueTarget
-            ? useMessageQueueStore.getState().sendingIds[getMessageQueueKey(messageQueueTarget)] ?? EMPTY_SENDING_IDS
-            : EMPTY_SENDING_IDS;
-        const queuedMessagesToSend = (queuedMessageId
-            ? queuedMessages.filter((message) => message.id === queuedMessageId)
-            : queuedMessages
-        ).filter((message) => !sendingIds.includes(message.id));
-
         if (queuedOnly && autoReviewRunning) {
             return;
         }
 
         if (queuedOnly) {
-            if (queuedMessagesToSend.length === 0 || !currentSessionId) return;
+            if (!queuedMessages.some((message) => !queuedMessageId || message.id === queuedMessageId) || !currentSessionId) return;
         } else if ((!inputSnapshot.hasContent && !hasQueuedMessages) || (!currentSessionId && !newSessionDraftOpen)) {
             return;
         }
 
-        const capturedSendConfig = queuedOnly ? queuedMessagesToSend[0]?.sendConfig : undefined;
+        // The projection knows the captured send configuration; the full
+        // messages are taken from the queue only once nothing below can still
+        // bail out, so an early return leaves the queue untouched.
+        const queuedProjection = queuedMessageId
+            ? queuedMessages.filter((message) => message.id === queuedMessageId)
+            : queuedMessages;
+        const capturedSendConfig = queuedOnly ? queuedProjection[0]?.sendConfig : undefined;
         const providerIdToSend = capturedSendConfig?.providerID ?? currentProviderId;
         const modelIdToSend = capturedSendConfig?.modelID ?? currentModelId;
         const agentNameToSend = capturedSendConfig?.agent ?? currentAgentName;
@@ -1066,7 +1269,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         // rejected turn winds down and the session returns to idle. This avoids
         // aborting the turn (which would surface an "aborted" notice).
         if (currentSessionId && !queuedOnly && autoReviewRunning && !isBtwActive) {
-            handleQueueMessage();
+            void handleQueueMessage();
             return;
         }
 
@@ -1088,7 +1291,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                 sessionActions.dismissOpenQuestionsForSession(currentSessionId),
             ]);
             if (deniedPermissions || dismissedQuestions) {
-                handleQueueMessage();
+                void handleQueueMessage();
                 return;
             }
         }
@@ -1112,48 +1315,43 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         }
         if (delivery && sendMessageOptions) sendMessageOptions.delivery = delivery;
 
-        const preparedDocumentMentions = new Map<string, AttachedFile[]>();
+        // Queued messages resolved their mentions when they were queued; only
+        // the composer's own text can still name a document.
         const reservedFilenames = new Set([
             ...attachedFiles.map((attachment) => attachment.filename),
-            ...queuedMessagesToSend.flatMap((queued) => queued.attachments?.map((attachment) => attachment.filename) ?? []),
+            ...queuedProjection.flatMap((queued) => queued.attachments?.map((attachment) => attachment.filename) ?? []),
         ]);
-        const mentionTexts = [
-            ...queuedMessagesToSend.map((queued) => queued.content),
-            ...(!queuedOnly && inputSnapshot.hasContent ? [inputSnapshot.message] : []),
-        ];
-        for (const rawText of mentionTexts) {
-            for (const token of scanMentions(rawText)) {
-                const mention = resolveInlineFileMention(token.name);
-                if (
-                    !mention
-                    || !isDocumentAttachmentFilename(mention.filename)
-                    || preparedDocumentMentions.has(mention.serverPath)
-                ) {
-                    continue;
-                }
-                try {
-                    const response = await runtimeFetch('/api/fs/raw', { query: { path: mention.serverPath } });
-                    if (!response.ok) throw new Error(`Failed to read ${mention.filename}`);
-                    const sourceBlob = await response.blob();
-                    if (getRuntimeKey() !== submitRuntimeKey) return;
-                    const source = new File([sourceBlob], mention.filename);
-                    const prepared = await prepareLocalAttachments(source, reservedFilenames);
-                    if (!prepared || prepared.length === 0) throw new Error(`Failed to prepare ${mention.filename}`);
-                    if (getRuntimeKey() !== submitRuntimeKey) return;
-                    preparedDocumentMentions.set(mention.serverPath, prepared);
-                    for (const attachment of prepared) reservedFilenames.add(attachment.filename);
-                } catch {
-                    if (getRuntimeKey() !== submitRuntimeKey) return;
-                    toast.error(t('chat.chatInput.toast.attachNamedFailed', { name: mention.filename }));
-                    return;
-                }
+        const documentMentions = await prepareDocumentMentions(
+            !queuedOnly && inputSnapshot.hasContent ? [inputSnapshot.message] : [],
+            reservedFilenames,
+            submitRuntimeKey,
+        );
+        if (documentMentions.status === 'runtime-changed') return;
+        if (documentMentions.status === 'failed') {
+            toast.error(t('chat.chatInput.toast.attachNamedFailed', { name: documentMentions.filename }));
+            return;
+        }
+        const preparedDocumentMentions = documentMentions.prepared;
+
+        // The composer delivers these itself, so they leave the queue now — the
+        // queue's own delivery (server-side, or the auto-send hook in VS Code)
+        // skips anything already in flight, and a message already being
+        // delivered stays out of this send so it cannot go out twice.
+        let queuedMessagesToSend: QueuedMessage[] = [];
+        if (capturedTarget && hasQueuedMessages) {
+            try {
+                queuedMessagesToSend = await takeForSend(capturedTarget, queuedMessageId);
+            } catch (error) {
+                console.warn('[queue] failed to take queued messages for sending:', error);
+                toast.error(t('chat.queuedMessage.toast.takeFailed'));
+                return;
             }
+            if (queuedOnly && queuedMessagesToSend.length === 0) return;
         }
 
         // Inline review comments and synthetic context are consumed before
-        // assembly so a failed send can restore exactly what it took. Context
-        // drafts ride with whichever send goes out next, including queued
-        // auto-sends: queueing leaves them in the store on purpose.
+        // assembly so a failed send can restore exactly what it took. What is
+        // here belongs to this send: queueing took its own context with it.
         const syntheticParts = consumePendingSyntheticParts();
         const consumedDraftTarget = inlineDraftTarget;
         const drafts: InlineCommentDraft[] = consumedDraftTarget
@@ -1201,12 +1399,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
 
         if (outgoing.isEmpty) return;
 
-        // Clear queue and input
-        if (capturedTarget && queuedMessageId) {
-            removeFromQueue(capturedTarget, queuedMessageId);
-        } else if (capturedTarget && hasQueuedMessages) {
-            clearQueue(capturedTarget);
-        }
+        // Clear input (the queue was taken above)
         if (!queuedOnly) {
             setMessage('');
             confirmedMentionsRef.current.clear();
@@ -1381,16 +1574,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         };
 
         void sendPromise.then(() => {
-            // Record what this session was pointed at, so the work-status panel
-            // can show it as a context source long after the message scrolled
-            // away. A snapshot only — never re-fetched, never authoritative.
-            // Failures are swallowed: the message went out, and a missing
-            // bookkeeping entry must not surface as a send error.
-            const attachedThread = linkedIssue
-                ? { attachment: linkedIssue, kind: 'issue' as const }
-                : linkedPr
-                    ? { attachment: linkedPr, kind: 'pull' as const }
-                    : null;
             // On a draft there is no session yet in this closure: the send path
             // creates one and makes it current before resolving, so the id is
             // read from the store. The fallback is used only when the closure
@@ -1403,47 +1586,14 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                 : sessionState.currentSessionDirectory
                     ?? (linkTargetSessionId ? sessionState.getDirectoryForSession(linkTargetSessionId) : null)
                     ?? currentDirectory;
-
-            if (attachedThread && linkTargetSessionId) {
-                void sessionActions.setLinkedIssue(
-                    linkTargetSessionId,
-                    linkTargetDirectory,
-                    buildLinkedIssue({
-                        url: attachedThread.attachment.url,
-                        number: attachedThread.attachment.number,
-                        title: attachedThread.attachment.title,
-                        kind: attachedThread.kind,
-                        author: attachedThread.attachment.author,
-                        linkedAt: Date.now(),
-                    }),
-                    true,
-                ).catch(() => undefined);
-            }
-            if (linkedLinearIssue && linkTargetSessionId) {
-                void sessionActions.setLinkedIssue(
-                    linkTargetSessionId,
-                    linkTargetDirectory,
-                    buildLinkedLinearIssue({
-                        identifier: linkedLinearIssue.identifier,
-                        title: linkedLinearIssue.title,
-                        url: linkedLinearIssue.url,
-                        author: linkedLinearIssue.author,
-                        linkedAt: Date.now(),
-                    }),
-                    true,
-                ).catch(() => undefined);
+            if (linkTargetSessionId) {
+                recordLinkedReferences(linkTargetSessionId, linkTargetDirectory, { issue: linkedIssue, pr: linkedPr, linear: linkedLinearIssue });
             }
 
-            // Clear linked issue after successful message send
-            if (linkedIssue) {
-                setLinkedIssue(null);
-            }
-            if (linkedPr) {
-                setLinkedPr(null);
-            }
-            if (linkedLinearIssue) {
-                setLinkedLinearIssue(null);
-            }
+            // Linked references were sent; clear them from the composer.
+            setLinkedIssue(null);
+            setLinkedPr(null);
+            setLinkedLinearIssue(null);
         }).catch((error: unknown) => {
             const rawMessage =
                 error instanceof Error
@@ -1531,7 +1681,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         const inputSnapshot = getCurrentInputSnapshot();
         const canQueue = !isBtwActive && inputMode === 'normal' && inputSnapshot.hasContent && currentSessionId && (currentSessionPhase !== 'idle' || autoReviewRunning);
         if (followUpBehavior === 'queue' && canQueue) {
-            handleQueueMessage();
+            void handleQueueMessage();
         } else if (followUpBehavior === 'steer' && canQueue) {
             void handleSubmitRef.current({ delivery: 'steer' });
         } else {
@@ -1738,7 +1888,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                 if (isCtrlEnter || !canQueue) {
                     handleSubmit();
                 } else {
-                    handleQueueMessage();
+                    void handleQueueMessage();
                 }
             } else {
                 // steer: Enter steers into the running turn, Ctrl+Enter sends now.
@@ -2815,7 +2965,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                         title={linkedPr.title}
                         url={linkedPr.url}
                         author={linkedPr.author}
-                        branches={{ head: linkedPr.head, base: linkedPr.base }}
+                        branches={linkedPr.head && linkedPr.base ? { head: linkedPr.head, base: linkedPr.base } : undefined}
                         openInBrowserLabel={t('chat.chatInput.linked.pr.openInBrowserAria')}
                         removeLabel={t('chat.chatInput.linked.pr.removeAria')}
                         onReopenPicker={() => setPrPickerOpen(true)}

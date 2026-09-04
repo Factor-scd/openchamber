@@ -2272,6 +2272,21 @@ const CUSTOM_PROVIDER_NPM_PACKAGES = new Set([
   '@ai-sdk/anthropic',
 ]);
 
+type JsonValue = string | number | boolean | null | JsonObject | JsonValue[];
+type JsonObject = { [key: string]: JsonValue };
+type NormalizedCustomProviderModel = JsonObject & { name: string };
+type NormalizedCustomProviderOptions = JsonObject & {
+  baseURL: string;
+  headers?: Record<string, string>;
+};
+type NormalizedCustomProviderConfig = JsonObject & {
+  npm: string;
+  name: string;
+  options: NormalizedCustomProviderOptions;
+  models: Record<string, NormalizedCustomProviderModel>;
+  env?: string[];
+};
+
 export const validateCustomProviderConfig = (
   providerId: string,
   config: unknown,
@@ -2292,7 +2307,10 @@ export const validateCustomProviderConfig = (
 
   const npm = typeof config.npm === 'string' ? config.npm.trim() : OPENAI_COMPATIBLE_NPM;
   if (!CUSTOM_PROVIDER_NPM_PACKAGES.has(npm)) {
-    return { ok: false as const, error: 'Custom provider npm package is not supported' };
+    return {
+      ok: false as const,
+      error: 'Custom providers must use @ai-sdk/openai-compatible, @ai-sdk/openai, or @ai-sdk/anthropic',
+    };
   }
 
   const optionsBlock = isPlainObject(config.options) ? config.options : null;
@@ -2313,7 +2331,7 @@ export const validateCustomProviderConfig = (
     return { ok: false as const, error: 'At least one model is required' };
   }
 
-  const normalizedModels: Record<string, { name: string }> = {};
+  const normalizedModels: Record<string, NormalizedCustomProviderModel> = {};
   for (const [modelId, modelValue] of Object.entries(models)) {
     const trimmedId = typeof modelId === 'string' ? modelId.trim() : '';
     if (!trimmedId) {
@@ -2329,7 +2347,7 @@ export const validateCustomProviderConfig = (
     normalizedModels[trimmedId] = { name: modelName };
   }
 
-  const normalized: Record<string, unknown> = {
+  const normalized: NormalizedCustomProviderConfig = {
     npm,
     name,
     options: {
@@ -2364,11 +2382,42 @@ export const validateCustomProviderConfig = (
       headers[headerKey.trim()] = headerValue.trim();
     }
     if (Object.keys(headers).length > 0) {
-      (normalized.options as Record<string, unknown>).headers = headers;
+      normalized.options.headers = headers;
     }
   }
 
   return { ok: true as const, value: { providerId, config: normalized } };
+};
+
+const mergeCustomProviderConfig = (
+  existingValue: JsonValue | undefined,
+  normalizedConfig: NormalizedCustomProviderConfig,
+) => {
+  const existing = isPlainObject(existingValue) ? existingValue : {};
+  const existingOptions = isPlainObject(existing.options) ? existing.options : {};
+  const mergedOptions = { ...existingOptions, ...normalizedConfig.options };
+  if (!Object.prototype.hasOwnProperty.call(normalizedConfig.options, 'headers')) {
+    delete mergedOptions.headers;
+  }
+
+  const existingModels = isPlainObject(existing.models) ? existing.models : {};
+  const mergedModels = Object.fromEntries(
+    Object.entries(normalizedConfig.models).map(([modelId, normalizedModel]) => {
+      const existingModel = isPlainObject(existingModels[modelId]) ? existingModels[modelId] : {};
+      return [modelId, { ...existingModel, ...normalizedModel }];
+    }),
+  );
+
+  const merged = {
+    ...existing,
+    ...normalizedConfig,
+    options: mergedOptions,
+    models: mergedModels,
+  };
+  if (!Object.prototype.hasOwnProperty.call(normalizedConfig, 'env')) {
+    delete merged.env;
+  }
+  return merged;
 };
 
 export const upsertProviderConfig = (
@@ -2406,8 +2455,24 @@ export const upsertProviderConfig = (
   const providerConfig = isPlainObject(targetConfig.provider)
     ? { ...(targetConfig.provider as Record<string, unknown>) }
     : {};
-  providerConfig[validated.value.providerId] = validated.value.config;
+  const providersAlias = isPlainObject(targetConfig.providers)
+    ? { ...targetConfig.providers }
+    : {};
+  const existingProviderValue = providerConfig[validated.value.providerId]
+    ?? providersAlias[validated.value.providerId];
+  // SAFETY: config layers come from the JSONC parser, so provider entries are JSON values.
+  const existingProvider = existingProviderValue as JsonValue | undefined;
+  const mergedConfig = mergeCustomProviderConfig(existingProvider, validated.value.config);
+  providerConfig[validated.value.providerId] = mergedConfig;
   targetConfig.provider = providerConfig;
+  if (Object.prototype.hasOwnProperty.call(providersAlias, validated.value.providerId)) {
+    delete providersAlias[validated.value.providerId];
+    if (Object.keys(providersAlias).length === 0) {
+      delete targetConfig.providers;
+    } else {
+      targetConfig.providers = providersAlias;
+    }
+  }
 
   if (Array.isArray(targetConfig.disabled_providers)) {
     targetConfig.disabled_providers = targetConfig.disabled_providers.filter(
@@ -2421,7 +2486,7 @@ export const upsertProviderConfig = (
   return {
     providerId: validated.value.providerId,
     path: writePath,
-    config: validated.value.config,
+    config: mergedConfig,
   };
 };
 
