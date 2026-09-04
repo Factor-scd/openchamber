@@ -14,7 +14,7 @@
   "scripts": {
     "dev": "bun run build:watch",
     "dev:server": "OPENCHAMBER_RELAY_HOST=${OPENCHAMBER_RELAY_HOST:-off} bun server/index.js --port ${OPENCHAMBER_PORT:-3001}",
-    "dev:server:watch": "OPENCHAMBER_RELAY_HOST=${OPENCHAMBER_RELAY_HOST:-off} nodemon --watch server --ext js --exec \"bun server/index.js --port ${OPENCHAMBER_PORT:-3001}\"",
+    "dev:server:watch": "node ./scripts/dev-server-watch.mjs",
     "build": "vite build",
     "build:watch": "vite build --watch",
     "type-check": "tsc --noEmit",
