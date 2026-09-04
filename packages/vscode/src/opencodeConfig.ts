@@ -2266,6 +2266,11 @@ export const removeProviderConfig = (providerId: string, workingDirectory?: stri
 const PROVIDER_ID_PATTERN = /^[a-z0-9][a-z0-9-_]*$/;
 const BASE_URL_PATTERN = /^https?:\/\//;
 const OPENAI_COMPATIBLE_NPM = '@ai-sdk/openai-compatible';
+const CUSTOM_PROVIDER_NPM_PACKAGES = new Set([
+  OPENAI_COMPATIBLE_NPM,
+  '@ai-sdk/openai',
+  '@ai-sdk/anthropic',
+]);
 
 type JsonValue = string | number | boolean | null | JsonObject | JsonValue[];
 type JsonObject = { [key: string]: JsonValue };
@@ -2301,8 +2306,11 @@ export const validateCustomProviderConfig = (
   }
 
   const npm = typeof config.npm === 'string' ? config.npm.trim() : OPENAI_COMPATIBLE_NPM;
-  if (npm !== OPENAI_COMPATIBLE_NPM) {
-    return { ok: false as const, error: `Custom providers must use npm package ${OPENAI_COMPATIBLE_NPM}` };
+  if (!CUSTOM_PROVIDER_NPM_PACKAGES.has(npm)) {
+    return {
+      ok: false as const,
+      error: 'Custom providers must use @ai-sdk/openai-compatible, @ai-sdk/openai, or @ai-sdk/anthropic',
+    };
   }
 
   const optionsBlock = isPlainObject(config.options) ? config.options : null;
@@ -2340,7 +2348,7 @@ export const validateCustomProviderConfig = (
   }
 
   const normalized: NormalizedCustomProviderConfig = {
-    npm: OPENAI_COMPATIBLE_NPM,
+    npm,
     name,
     options: {
       baseURL,
