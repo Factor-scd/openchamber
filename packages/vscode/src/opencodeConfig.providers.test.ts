@@ -136,6 +136,110 @@ describe('custom provider config persistence (VS Code parity)', () => {
     assert.deepEqual(written.disabled_providers, ['other']);
   });
 
+  test('upsertProviderConfig preserves unmanaged provider and model metadata', () => {
+    const configPath = path.join(projectDir, 'opencode.json');
+    writeJson(configPath, {
+      provider: {
+        'campus-llm': {
+          npm: '@ai-sdk/openai-compatible',
+          name: 'Old',
+          customProviderField: { owner: 'user' },
+          env: ['OLD_KEY'],
+          options: {
+            baseURL: 'https://old.example.edu/v1',
+            headers: { 'X-Old': '1' },
+            timeout: 45_000,
+          },
+          models: {
+            retained: {
+              name: 'Old retained name',
+              reasoning: true,
+              attachment: true,
+              tool_call: true,
+              modalities: { input: ['text', 'image', 'pdf'], output: ['text'] },
+              limit: { context: 1_050_000, input: 922_000, output: 128_000 },
+              options: { instructions: 'Keep this instruction' },
+              variants: {
+                low: { reasoningEffort: 'low' },
+                high: { reasoningEffort: 'high' },
+              },
+              customModelField: { source: 'manual' },
+            },
+            removed: {
+              name: 'Remove me',
+              reasoning: true,
+            },
+          },
+        },
+      },
+    });
+
+    upsertProviderConfig('campus-llm', {
+      name: 'Campus LLM',
+      options: { baseURL: 'https://new.example.edu/v1' },
+      models: {
+        retained: { name: 'Retained model' },
+        added: { name: 'Added model' },
+      },
+    }, projectDir, 'project', { hasStoredAuth: true });
+
+    const written = readJson(configPath).provider['campus-llm'];
+    assert.deepEqual(written, {
+      npm: '@ai-sdk/openai-compatible',
+      name: 'Campus LLM',
+      customProviderField: { owner: 'user' },
+      options: {
+        baseURL: 'https://new.example.edu/v1',
+        timeout: 45_000,
+      },
+      models: {
+        retained: {
+          name: 'Retained model',
+          reasoning: true,
+          attachment: true,
+          tool_call: true,
+          modalities: { input: ['text', 'image', 'pdf'], output: ['text'] },
+          limit: { context: 1_050_000, input: 922_000, output: 128_000 },
+          options: { instructions: 'Keep this instruction' },
+          variants: {
+            low: { reasoningEffort: 'low' },
+            high: { reasoningEffort: 'high' },
+          },
+          customModelField: { source: 'manual' },
+        },
+        added: { name: 'Added model' },
+      },
+    });
+  });
+
+  test('upsertProviderConfig preserves metadata while migrating the legacy providers alias', () => {
+    const configPath = path.join(projectDir, 'opencode.json');
+    writeJson(configPath, {
+      providers: {
+        legacy: {
+          name: 'Legacy provider',
+          options: { baseURL: 'https://old.example.com/v1', timeout: 30_000 },
+          models: { model: { name: 'Old model', reasoning: true } },
+        },
+      },
+    });
+
+    upsertProviderConfig('legacy', {
+      name: 'Updated provider',
+      options: { baseURL: 'https://new.example.com/v1' },
+      models: { model: { name: 'Updated model' } },
+    }, projectDir, 'project', { hasStoredAuth: true });
+
+    const written = readJson(configPath);
+    assert.equal(written.providers, undefined);
+    assert.deepEqual(written.provider.legacy, {
+      npm: '@ai-sdk/openai-compatible',
+      name: 'Updated provider',
+      options: { baseURL: 'https://new.example.com/v1', timeout: 30_000 },
+      models: { model: { name: 'Updated model', reasoning: true } },
+    });
+  });
+
   test('upsert then remove restores absence', () => {
     upsertProviderConfig('temp-provider', {
       name: 'Temp',
