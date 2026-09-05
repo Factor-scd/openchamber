@@ -8,16 +8,16 @@ jobs:
     steps:
       - name: Checkout
         run: |
-          rm -rf $GITHUB_WORKSPACE
-          mkdir -p $GITHUB_WORKSPACE
-          git clone --depth 1 --branch custom https://gitea@giteassh.buzzbee.dev:Vibing/openchamber.git $GITHUB_WORKSPACE
+          rm -rf $GITHUB_WORKSPACE/repo
+          mkdir -p $GITHUB_WORKSPACE/repo
+          git clone --depth 1 --branch custom https://gitea@giteassh.buzzbee.dev:Vibing/openchamber.git $GITHUB_WORKSPACE/repo
       - name: Show revision
-        run: git -C $GITHUB_WORKSPACE rev-parse --short HEAD
+        run: git -C $GITHUB_WORKSPACE/repo rev-parse --short HEAD
       - name: Copy workspace to build dir
         run: |
           rm -rf /opt/app/deploy/custom-build
           mkdir -p /opt/app/deploy/custom-build
-          tar -C $GITHUB_WORKSPACE --exclude=.git -cf - . | tar -C /opt/app/deploy/custom-build -xf -
+          tar -C $GITHUB_WORKSPACE/repo --exclude=.git -cf - . | tar -C /opt/app/deploy/custom-build -xf -
       - name: Install dependencies
         run: cd /opt/app/deploy/custom-build && bun install --frozen-lockfile
       - name: Build web
