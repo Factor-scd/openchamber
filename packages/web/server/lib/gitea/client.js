@@ -3,7 +3,6 @@ import { getGiteaAuth } from './auth.js';
 import { getProviderApiBaseUrl } from '../git-providers/config.js';
 import { getEffectiveProviderApiBaseUrl } from '../git-providers/project-config.js';
 
-const TEA_BIN = process.env.TEA_BIN || '/home/user/.local/bin/tea';
 const REQUEST_TIMEOUT_MS = 8000;
 
 // NOTE: ETag conditional-GET cache and rate-limit cooldown have been dropped
@@ -44,59 +43,79 @@ function spawnCli(bin, args, env, timeoutMs = REQUEST_TIMEOUT_MS) {
 }
 
 /**
+ * Parse the `Link` header value to extract rel="next" and rel="prev" URLs.
+ * Returns { next, prev } with the raw URL strings (or null).
+ */
+function parseLinkHeader(linkHeader) {
+  if (!linkHeader) return { next: null, prev: null };
+  const result = { next: null, prev: null };
+  const parts = linkHeader.split(',');
+  for (const part of parts) {
+    const match = part.match(/<([^>]+)>;\s*rel="(\w+)"/);
+    if (match) {
+      const [, url, rel] = match;
+      if (rel === 'next') result.next = url;
+      if (rel === 'prev') result.prev = url;
+    }
+  }
+  return result;
+}
+
+/**
  * Run a `tea api` call and parse the response envelope.
  *
- * `tea api --include` outputs:
- *   <status line: HTTP/1.1 200 OK>
- *   <headers, one per line>
- *   <empty line>
- *   <JSON body>
+ * tea's `--include` flag writes HTTP status and response headers to **stderr**
+ * and the response body to **stdout**.  The client reads both streams:
  *
- * Without `--include`, stdout is just the JSON body on success.
+ *   stderr:  HTTP/2.0 200 OK\nHeader: value\n...\n\n
+ *   stdout:  {"json": "body"}
+ *
+ * Auth is passed via `-H "Authorization: token <token>"` — the
+ * `GITEA_SERVER_TOKEN` env var is ignored by tea (it uses its own config).
+ *
+ * Pagination: `--paginate` does NOT exist in tea.  We parse the `Link` header
+ * from stderr to derive `page` and `hasMore`.
  */
-async function teaApiCall(endpoint, { method = 'GET', body, raw, paginate, teaBin, token }) {
+async function teaApiCall(endpoint, { method = 'GET', body, raw, teaBin, token }) {
   const args = ['api', '--include'];
   if (method !== 'GET') args.push('-X', method);
-  if (paginate) args.push('--paginate');
   if (raw) args.push('--header', 'Accept: text/plain');
   if (body !== undefined) args.push('--header', 'Content-Type: application/json', '-d', JSON.stringify(body));
+  // Pass auth via header (C2 fix) — tea ignores GITEA_SERVER_TOKEN env.
+  if (token) args.push('-H', `Authorization: token ${token}`);
   args.push(endpoint);
 
   let result;
   try {
-    result = await spawnCli(teaBin, args, { GITEA_SERVER_TOKEN: token });
+    result = await spawnCli(teaBin, args, {});
   } catch (err) {
     return { status: 500, headers: {}, data: null, page: null, error: err.message };
   }
 
-  const { stdout, stderr, exitCode } = result;
+  const { stdout, stderr } = result;
 
-  if (exitCode !== 0 && !stdout.trim()) {
-    return { status: 500, headers: {}, data: null, page: null, error: stderr.trim() || `tea exited with code ${exitCode}` };
-  }
-
-  // Parse --include output: status line, headers, blank line, body.
-  const lines = stdout.split('\n');
+  // Parse --include output from stderr: status line, headers, blank line.
+  // stdout contains only the response body.
   let status = 200;
   const headers = {};
-  let bodyStart = 0;
 
-  const statusMatch = lines[0]?.match(/HTTP\/\S+\s+(\d+)/);
+  const stderrLines = stderr.split('\n');
+  const statusMatch = stderrLines[0]?.match(/HTTP\/\S+\s+(\d+)/);
   if (statusMatch) {
     status = Number(statusMatch[1]);
-    for (let i = 1; i < lines.length; i++) {
-      if (lines[i].trim() === '') {
-        bodyStart = i + 1;
-        break;
-      }
-      const colonIdx = lines[i].indexOf(':');
+    for (let i = 1; i < stderrLines.length; i++) {
+      if (stderrLines[i].trim() === '') break;
+      const colonIdx = stderrLines[i].indexOf(':');
       if (colonIdx > 0) {
-        headers[lines[i].slice(0, colonIdx).trim().toLowerCase()] = lines[i].slice(colonIdx + 1).trim();
+        headers[stderrLines[i].slice(0, colonIdx).trim().toLowerCase()] = stderrLines[i].slice(colonIdx + 1).trim();
       }
     }
+  } else if (stderr.trim() && !stdout.trim()) {
+    // No --include output on stderr and no body — surface the stderr message.
+    return { status: 500, headers: {}, data: null, page: null, error: stderr.trim() };
   }
 
-  const bodyText = lines.slice(bodyStart).join('\n').trim();
+  const bodyText = stdout.trim();
   if (!bodyText) {
     return { status, headers, data: null, page: null };
   }
@@ -105,11 +124,35 @@ async function teaApiCall(endpoint, { method = 'GET', body, raw, paginate, teaBi
     return { status, headers, data: bodyText, page: null };
   }
 
+  let data;
   try {
-    return { status, headers, data: JSON.parse(bodyText), page: null };
+    data = JSON.parse(bodyText);
   } catch {
-    return { status, headers, data: bodyText, page: null };
+    data = bodyText;
   }
+
+  // Derive pagination info object matching the pre-pivot parsePageInfo shape.
+  // routes.js reads resp.page?.hasMore, resp.page?.nextUrl, etc.
+  const { next } = parseLinkHeader(headers.link);
+  const listIsArray = Array.isArray(data);
+  const totalRaw = headers['x-total-count'];
+  const total = totalRaw ? Number(totalRaw) : null;
+  let currentPage = null;
+  if (listIsArray && next) {
+    const pageMatch = next.match(/[?&]page=(\d+)/);
+    if (pageMatch) {
+      currentPage = Math.max(1, Number(pageMatch[1]) - 1);
+    }
+  }
+  const pageInfo = {
+    page: currentPage,
+    next: next || null,
+    total: total !== null && Number.isFinite(total) ? total : null,
+    hasMore: listIsArray ? next !== null : false,
+    nextUrl: next || undefined,
+  };
+
+  return { status, headers, data, page: pageInfo };
 }
 
 // ---- Rate-limit helpers (no-ops with CLI transport) ----
@@ -128,7 +171,8 @@ const apiPath = (path) => {
 /**
  * Create a CLI-backed Gitea/Forgejo REST v1 client. Spawns `tea api` for each
  * request. `request` never throws for HTTP error statuses — it returns
- * `{ status, headers, data, page }` so callers can branch on status codes.
+ * `{ status, headers, data, page, hasMore }` so callers can branch on status
+ * codes.
  */
 export function createGiteaClient({ token, baseUrl }) {
   const effectiveBaseUrl = typeof baseUrl === 'string' ? baseUrl.trim().replace(/\/+$/, '') : '';
@@ -153,8 +197,7 @@ export function createGiteaClient({ token, baseUrl }) {
       endpoint += `${endpoint.includes('?') ? '&' : '?'}${qs.toString()}`;
     }
 
-    const paginate = method === 'GET' && hasQuery;
-    return teaApiCall(endpoint, { method, body, raw, paginate, teaBin, token });
+    return teaApiCall(endpoint, { method, body, raw, teaBin, token });
   };
 
   return {

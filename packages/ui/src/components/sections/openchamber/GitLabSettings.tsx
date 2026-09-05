@@ -84,7 +84,8 @@ export const GitLabSettings: React.FC<{ embedded?: boolean }> = ({ embedded = fa
       toast.success(t('settings.gitlab.page.toast.connected'));
     } catch (error) {
       console.error('Failed to connect GitLab:', error);
-      toast.error(t('settings.gitlab.page.errors.failed'));
+      const message = error instanceof Error ? error.message : String(error);
+      toast.error(t('settings.gitlab.page.errors.failed'), { description: message });
     } finally {
       setIsBusy(false);
     }
@@ -144,7 +145,24 @@ export const GitLabSettings: React.FC<{ embedded?: boolean }> = ({ embedded = fa
   }, [runtimeGitLab, setStatus, t]);
 
   if (isLoading) {
-    return null;
+    return (
+      <SettingsSection
+        title={t('settings.gitlab.page.title')}
+        description={t('settings.gitlab.page.description')}
+        info={t('settings.gitlab.page.tooltip.connectAccount')}
+        settingsItem="git.gitlab-account"
+      >
+        <div className="rounded-lg bg-[var(--surface-elevated)]/70 overflow-hidden flex flex-col">
+          <div className="px-4 py-3 flex items-center gap-4 animate-pulse">
+            <div className="h-10 w-10 shrink-0 rounded-full bg-[var(--surface-muted)]" />
+            <div className="flex-1 space-y-2">
+              <div className="h-4 w-32 bg-[var(--surface-muted)] rounded" />
+              <div className="h-3 w-48 bg-[var(--surface-muted)] rounded" />
+            </div>
+          </div>
+        </div>
+      </SettingsSection>
+    );
   }
 
   const connected = Boolean(status?.connected);
@@ -232,6 +250,9 @@ export const GitLabSettings: React.FC<{ embedded?: boolean }> = ({ embedded = fa
                 {t('settings.gitlab.page.actions.connect')}
               </Button>
             </div>
+            <p className="typography-micro text-muted-foreground">
+              Authenticates via the glab CLI binary and your access token.
+            </p>
           </div>
         )}
 

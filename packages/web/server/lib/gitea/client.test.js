@@ -12,7 +12,11 @@ afterAll(() => {
   fs.rmSync(TEMP_DATA_DIR, { recursive: true, force: true });
 });
 
-// Mock child_process.spawn to simulate `tea api --include` output.
+// Mock child_process.spawn to simulate real `tea api` output.
+// Real tea behavior:
+//   - `--include` writes status+headers to stderr, body to stdout
+//   - `--paginate` does NOT exist (tea rejects it)
+//   - Auth via `-H "Authorization: token <token>"`, NOT via GITEA_SERVER_TOKEN env
 const originalSpawn = (await import('child_process')).spawn;
 let spawnMock = null;
 
@@ -28,32 +32,36 @@ const {
 } = await import('./client.js');
 
 /**
- * Build the `tea api --include` output format:
- *   <status line>\n<header: value>\n...\n\n<body>
+ * Build real tea --include output: status+headers on stderr, body on stdout.
  */
 const cliOutput = (data, { status = 200, headers = {} } = {}) => {
-  const lines = [`HTTP/1.1 ${status} OK`];
+  const stderrLines = [`HTTP/2.0 ${status} OK`];
   for (const [k, v] of Object.entries(headers)) {
-    lines.push(`${k}: ${v}`);
+    stderrLines.push(`${k}: ${v}`);
   }
-  lines.push('');
-  lines.push(typeof data === 'string' ? data : JSON.stringify(data));
-  return lines.join('\n');
+  stderrLines.push('');
+  return {
+    stdout: typeof data === 'string' ? data : JSON.stringify(data),
+    stderr: stderrLines.join('\n'),
+  };
 };
 
 /**
- * Create a vi.fn() mock spawn function that calls `on('close')` with the given
- * exit code and delivers `output` on stdout.
+ * Create a vi.fn() mock spawn that emits stderr (headers) and stdout (body)
+ * separately, matching real tea --include behavior.
  */
-const mockSpawn = (output, { exitCode = 0, stderr = '' } = {}) => {
+const mockSpawn = (output, { exitCode = 0 } = {}) => {
+  const { stdout, stderr } = typeof output === 'object' && 'stdout' in output
+    ? output
+    : cliOutput(output);
   return vi.fn((...args) => {
     const child = new EventEmitter();
     child.stdout = new EventEmitter();
     child.stderr = new EventEmitter();
     child.kill = vi.fn();
     queueMicrotask(() => {
-      child.stdout.emit('data', output);
-      if (stderr) child.stderr.emit('data', stderr);
+      child.stdout.emit('data', stdout);
+      child.stderr.emit('data', stderr);
       child.emit('close', exitCode);
     });
     return child;
@@ -65,7 +73,7 @@ afterEach(() => {
 });
 
 describe('createGiteaClient request basics', () => {
-  test('spawns tea api --include and sends GITEA_SERVER_TOKEN env', async () => {
+  test('spawns tea api --include and passes auth via -H header (not env)', async () => {
     spawnMock = mockSpawn(cliOutput({ id: 42, login: 'alice' }));
 
     const client = createGiteaClient({ token: 'gitea-token', baseUrl: 'https://gitea.example.com' });
@@ -74,8 +82,12 @@ describe('createGiteaClient request basics', () => {
     expect(spawnMock).toHaveBeenCalledTimes(1);
     const [bin, args, opts] = spawnMock.mock.calls[0];
     expect(bin).toBe('/home/user/.local/bin/tea');
-    expect(args).toEqual(['api', '--include', '/api/v1/user']);
-    expect(opts.env.GITEA_SERVER_TOKEN).toBe('gitea-token');
+    expect(args).toContain('--include');
+    expect(args).toContain('-H');
+    expect(args).toContain('Authorization: token gitea-token');
+    expect(args).not.toContain('--paginate');
+    // Auth is via header, NOT via GITEA_SERVER_TOKEN env (C2 fix).
+    expect(opts.env.GITEA_SERVER_TOKEN).toBeUndefined();
     expect(result).toMatchObject({ status: 200, data: { id: 42, login: 'alice' } });
     expect(result.error).toBeUndefined();
   });
@@ -159,23 +171,83 @@ describe('createGiteaClient request basics', () => {
     expect(result.error).toContain('ENOENT');
   });
 
-  test('returns 500 on non-zero exit with no stdout', async () => {
-    spawnMock = mockSpawn('', { exitCode: 1, stderr: 'not logged in' });
+  test('returns 500 on non-zero exit with no stdout and no stderr status line', async () => {
+    spawnMock = mockSpawn({ stdout: '', stderr: 'not logged in' }, { exitCode: 1 });
 
     const client = createGiteaClient({ token: 't', baseUrl: 'https://gitea.example.com' });
     const result = await client.user();
     expect(result.status).toBe(500);
     expect(result.error).toBe('not logged in');
   });
+
+  test('parses status code from stderr --include output (C3 fix)', async () => {
+    // Simulate tea's real output: 403 on stderr, error body on stdout.
+    spawnMock = mockSpawn(cliOutput({ message: 'forbidden' }, { status: 403 }));
+
+    const client = createGiteaClient({ token: 't', baseUrl: 'https://gitea.example.com' });
+    const result = await client.user();
+    expect(result.status).toBe(403);
+    expect(result.data).toEqual({ message: 'forbidden' });
+  });
 });
 
 describe('pagination', () => {
-  test('page object is null (CLI handles pagination)', async () => {
-    spawnMock = mockSpawn(cliOutput([], { headers: {} }));
+  test('page is an object with hasMore=true when Link header has rel="next"', async () => {
+    spawnMock = mockSpawn(
+      cliOutput([{ id: 1 }], {
+        headers: {
+          'Link': '<https://gitea.example.com/api/v1/repos/o/r/issues?limit=1&page=2>; rel="next"',
+          'X-Total-Count': '10',
+        },
+      }),
+    );
 
     const client = createGiteaClient({ token: 't', baseUrl: 'https://gitea.example.com' });
-    const result = await client.issues('o', 'r', { page: 2 });
-    expect(result.page).toBeNull();
+    const result = await client.issues('o', 'r', { limit: 1, page: 1 });
+    // page is the object shape that routes.js expects
+    expect(result.page).toEqual(expect.objectContaining({
+      hasMore: true,
+      nextUrl: 'https://gitea.example.com/api/v1/repos/o/r/issues?limit=1&page=2',
+      next: 'https://gitea.example.com/api/v1/repos/o/r/issues?limit=1&page=2',
+      page: 1,
+      total: 10,
+    }));
+    expect(Array.isArray(result.data)).toBe(true);
+  });
+
+  test('page is an object with hasMore=false when no Link header', async () => {
+    spawnMock = mockSpawn(cliOutput([{ id: 1 }]));
+
+    const client = createGiteaClient({ token: 't', baseUrl: 'https://gitea.example.com' });
+    const result = await client.issues('o', 'r', { limit: 50 });
+    expect(result.page).toEqual(expect.objectContaining({
+      hasMore: false,
+      next: null,
+      total: null,
+    }));
+  });
+
+  test('page is an object for non-array responses too', async () => {
+    spawnMock = mockSpawn(cliOutput({ id: 42 }));
+
+    const client = createGiteaClient({ token: 't', baseUrl: 'https://gitea.example.com' });
+    const result = await client.user();
+    expect(result.page).toEqual(expect.objectContaining({
+      hasMore: false,
+      next: null,
+      page: null,
+    }));
+  });
+
+  test('does NOT pass --paginate flag to tea (C1 fix)', async () => {
+    spawnMock = mockSpawn(cliOutput([]));
+
+    const client = createGiteaClient({ token: 't', baseUrl: 'https://gitea.example.com' });
+    await client.issues('o', 'r', { state: 'open', page: 2 });
+
+    const [, args] = spawnMock.mock.calls[0];
+    expect(args).not.toContain('--paginate');
+    expect(args).not.toContain('-paginate');
   });
 });
 
