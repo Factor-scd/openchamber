@@ -315,6 +315,21 @@ describe('message queue runtime', () => {
     expect(runtime.snapshot().sessions).toEqual([]);
   });
 
+  it('names the directory in the broadcast that empties a queue', async () => {
+    // The UI keys its projection by directory; without it the client cannot
+    // tell which queue just delivered its last message and keeps showing it.
+    const { runtime, emit, broadcasts, openCode } = createRuntime();
+    runtime.start();
+    await runtime.enqueue(SESSION, DIRECTORY, item());
+    openCode.state.statuses = {};
+    emit({ type: 'session.status', properties: { sessionID: SESSION, status: { type: 'idle' } } });
+    await settle();
+
+    expect(openCode.state.sent).toHaveLength(1);
+    expect(runtime.snapshot().sessions).toEqual([]);
+    expect(broadcasts.at(-1).properties.session).toEqual({ sessionId: SESSION, directory: DIRECTORY, items: [], sendingId: null });
+  });
+
   it('reorders only with a complete permutation', async () => {
     const { runtime } = createRuntime();
     runtime.start();

@@ -220,6 +220,10 @@ export function createMessageQueueRuntime({
   const failures = new Map(); // sessionId → { itemId, failures, nextAttemptAt }
   const abortedAt = new Map(); // sessionId → timestamp
   const holds = new Map(); // sessionId → expiresAt
+  // sessionId → directory, kept after the queue empties: the UI keys its
+  // projection by directory, so the broadcast that removes the last item must
+  // still name it or the client cannot tell which queue just finished.
+  const directories = new Map();
 
   // --- persistence ---------------------------------------------------------
 
@@ -302,7 +306,7 @@ export function createMessageQueueRuntime({
     const queue = queues.get(sessionId);
     return {
       sessionId,
-      directory: queue?.directory ?? '',
+      directory: queue?.directory ?? directories.get(sessionId) ?? '',
       items: (queue?.items ?? []).map(toPublicItem),
       sendingId: sending.get(sessionId) ?? null,
     };
@@ -329,6 +333,7 @@ export function createMessageQueueRuntime({
   };
 
   const setQueueItems = (sessionId, directory, items) => {
+    directories.set(sessionId, directory);
     if (items.length === 0) {
       queues.delete(sessionId);
       return;
@@ -564,6 +569,7 @@ export function createMessageQueueRuntime({
     const existing = queues.get(sessionId);
     const items = [...(existing?.items ?? []), item].slice(-MAX_ITEMS_PER_SESSION);
     queues.set(sessionId, { directory, items });
+    directories.set(sessionId, directory);
     if (queues.size > MAX_SESSIONS) {
       const oldest = Array.from(queues.entries())
         .filter(([id]) => id !== sessionId && !sending.has(id))
@@ -573,6 +579,7 @@ export function createMessageQueueRuntime({
         queues.delete(staleId);
         clearTimer(staleId);
         broadcast(staleId);
+        directories.delete(staleId);
       }
     }
     const result = commit(sessionId);
@@ -675,6 +682,7 @@ export function createMessageQueueRuntime({
       clearTimer(deletedSessionId);
       failures.delete(deletedSessionId);
       commit(deletedSessionId);
+      directories.delete(deletedSessionId);
       return;
     }
 
