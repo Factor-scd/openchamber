@@ -10,7 +10,7 @@ jobs:
         run: |
           rm -rf $GITHUB_WORKSPACE/repo
           mkdir -p $GITHUB_WORKSPACE/repo
-          git clone --depth 1 --branch custom https://gitea@giteassh.buzzbee.dev:Vibing/openchamber.git $GITHUB_WORKSPACE/repo
+          git clone --depth 1 --branch custom gitea@giteassh.buzzbee.dev:Vibing/openchamber.git $GITHUB_WORKSPACE/repo
       - name: Show revision
         run: git -C $GITHUB_WORKSPACE/repo rev-parse --short HEAD
       - name: Copy workspace to build dir
