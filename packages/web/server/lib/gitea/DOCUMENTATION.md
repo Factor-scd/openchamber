@@ -2,17 +2,17 @@
 
 ## Purpose
 
-- This module owns Gitea/Forgejo auth (Personal Access Token), raw REST v1 client access, remote-URL repo resolution, and Gitea issue / pull-request (PR) APIs for OpenChamber, including issue create/update and PR create/update/merge writes.
+- This module owns Gitea/Forgejo auth (Personal Access Token), CLI-backed REST v1 client access, remote-URL repo resolution, and Gitea issue / pull-request (PR) APIs for OpenChamber, including issue create/update and PR create/update/merge writes.
 - From a user perspective, this is the layer that lets the app show Gitea issues and pull requests for a local project, including comments and per-file diffs, and create, edit, and merge pull requests.
 - Gitea and Forgejo share the same GitHub-style REST v1 API, so this module serves both. Gitea calls remote work **pull requests** (PR), not merge requests. Gitea repos are flat `owner/repo` — there are no multi-segment namespaces.
-- The module mirrors `packages/web/server/lib/gitlab/` (PAT auth + raw-fetch client) but uses a **Personal Access Token** against the `Authorization: token <pat>` header and a **user-supplied base URL** (Gitea is self-hosted; codeberg.org is the only built-in default).
+- The module mirrors `packages/web/server/lib/gitlab/` but uses the **`tea` CLI** as its transport instead of raw `fetch`. Auth is passed via the `GITEA_SERVER_TOKEN` environment variable (never on argv). The `tea` binary path is env-overridable via `TEA_BIN`, defaulting to `/home/user/.local/bin/tea`.
 
 ## Entrypoints and structure
 
 - `packages/web/server/lib/gitea/index.js`: public server entrypoint re-exports.
 - `packages/web/server/lib/gitea/routes.js`: Express route registration for `/api/gitea/*` endpoints.
 - `packages/web/server/lib/gitea/auth.js`: PAT auth storage, multi-account support, base URL normalization.
-- `packages/web/server/lib/gitea/client.js`: raw `fetch` Gitea REST v1 client (timeout, ETag conditional GET, rate-limit cooldown, `Link`-header pagination, redirect handling).
+- `packages/web/server/lib/gitea/client.js`: CLI-backed `tea api` client (process spawn with 8s timeout, `--include` for HTTP status/headers, `--paginate` for list endpoints, `--header` for raw diff Accept). Token is passed via `GITEA_SERVER_TOKEN` env var.
 - `packages/web/server/lib/gitea/client.d.ts`: hand-written type declaration for `client.js` (the module is plain JS); consumed by the live-test harness.
 - `packages/web/server/lib/gitea/repo.js`: Gitea remote URL parsing (flat `owner/repo`) and directory-to-repo resolution.
 - `packages/web/server/lib/opencode/feature-routes-runtime.js`: API route layer that calls this module (via `registerGiteaRoutes`).
@@ -56,13 +56,13 @@
 
 ## Client behavior
 
-- Base URL joining: `{baseUrl}/api/v1{path}`. Gitea repos are flat `owner/repo`, so owner/repo segments are interpolated directly (single path segments, no encoding needed).
-- Per-request timeout: 8000 ms via `AbortSignal.timeout`, unless the caller passes its own signal.
-- ETag conditional-GET cache: keyed `token\nurl`, max 300 LRU entries; a `304` is replayed from cache as a `200`. GET only.
-- Pagination: Gitea list endpoints return a `Link` header (`rel="next"`) plus `X-Total-Count`; both are parsed into the returned `page` object (`hasMore` = a next page exists). List requests use `page` + `limit` query params (Gitea caps `limit` at 50).
-- Redirects: `301`/`302`/`308` with a `Location` header are followed exactly once with `redirect: 'manual'`, preserving the `Authorization` header across the hop.
-- Rate limits: a `429` records a module-level cooldown (honoring `Retry-After` seconds / `X-RateLimit-Reset` Unix seconds when present) and surfaces `{ status: 429, error: 'Gitea rate limited' }`. While the cooldown is active, requests short-circuit without hitting the network.
+- Transport: each call spawns a `tea api` process with `--include` for HTTP status/headers. Auth is passed via `GITEA_SERVER_TOKEN` env var (never on argv). Binary path: `TEA_BIN` env or `/home/user/.local/bin/tea`.
+- Base URL: the `baseUrl` parameter is passed to the client constructor for compatibility but `tea` resolves the instance from its own login config. The `--include` flag provides HTTP status codes and response headers.
+- Per-request timeout: 8000 ms via `AbortSignal.timeout` on the spawned process. The process is killed with `SIGKILL` on timeout.
+- Pagination: `--paginate` is passed for GET requests with query params, causing `tea` to fetch all pages in a single call. The returned `page` object is `null` since pagination is handled by the CLI.
+- Raw diffs: `--header 'Accept: text/plain'` is passed for the `.diff` endpoint to get raw text output.
 - `request` never throws for HTTP error statuses — callers branch on `status`. The `raw: true` option returns the response body as text (used for the `.diff` endpoint).
+- ETag cache and rate-limit cooldown have been dropped with the CLI pivot. Each call spawns a fresh process, so there is no persistent connection for conditional requests or shared rate-limit state. `isGiteaRateLimited()` always returns `false`; `noteGiteaRateLimit()` is a no-op.
 
 ## API integration overview
 
@@ -149,6 +149,6 @@ Conventions mirror `github/routes.js` and `gitlab/routes.js`:
 
 - Keep the response shapes in lockstep with `Gitea*` types in `packages/ui/src/lib/api/types.ts`.
 - Never log tokens. Error messages must not include the access token.
-- The ETag cache and rate-limit cooldown are module-level and per-instance — they are NOT shared with the GitHub or GitLab modules.
+- The `tea` CLI handles authentication, base URL resolution, and pagination internally. The client does not maintain its own ETag cache or rate-limit cooldown — each call spawns a fresh process.
 - Gitea `GET /user` returns `login`/`full_name`/`html_url`; the route mappers accept the GitHub-style `username`/`name`/`web_url` variants too, so Forgejo versions that differ still map.
 - To add further Gitea write operations, add the endpoint in `routes.js`, add a convenience method in `client.js`, and extend the shared types — mirror the existing issue/PR write routes and the GitHub PR write routes.

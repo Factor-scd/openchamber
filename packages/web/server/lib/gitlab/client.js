@@ -1,193 +1,147 @@
+import { spawn } from 'child_process';
 import { getGitLabAuth, getGitLabDefaultBaseUrl } from './auth.js';
 
-// Per-request timeout for every GitLab call. GitLab REST can hang under load
-// (especially self-hosted instances); bounding each request lets the caller
-// fail fast and serve cached/last-known state instead of holding a socket open.
+const GLAB_BIN = process.env.GLAB_BIN || '/home/user/.local/bin/glab';
 const REQUEST_TIMEOUT_MS = 8000;
 
-const timeoutFetch = (url, options = {}) => {
-  // Respect a caller-provided signal if present; otherwise attach our timeout.
-  if (options.signal) {
-    return fetch(url, options);
-  }
-  return fetch(url, { ...options, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
-};
-
-// Conditional-request cache for GET calls: GitLab serves 304 Not Modified for
-// matching If-None-Match without consuming a fresh rate-limit token, so
-// polling unchanged issues/MRs stays cheap. Keyed by token+URL so different
-// identities never share responses. GitLab (unlike GitHub) does not attach
-// `ETag` to every endpoint, but when it does we revalidate exactly like
-// github/octokit.js.
-const ETAG_CACHE_MAX_ENTRIES = 300;
-const etagCache = new Map();
-
-const rememberEtag = (key, etag, body, headers) => {
-  etagCache.delete(key);
-  etagCache.set(key, { etag, body, headers });
-  if (etagCache.size > ETAG_CACHE_MAX_ENTRIES) {
-    const oldest = etagCache.keys().next().value;
-    if (oldest !== undefined) {
-      etagCache.delete(oldest);
-    }
-  }
-};
-
-const createConditionalFetch = (token) => async (url, options = {}) => {
-  const method = (options.method || 'GET').toUpperCase();
-  if (method !== 'GET') {
-    return timeoutFetch(url, options);
-  }
-
-  const cacheKey = `${token}\n${url}`;
-  const cached = etagCache.get(cacheKey);
-  const headers = { ...(options.headers || {}) };
-  if (cached?.etag) {
-    headers['if-none-match'] = cached.etag;
-  }
-
-  const response = await timeoutFetch(url, { ...options, headers });
-
-  if (response.status === 304 && cached) {
-    // Touch for LRU and replay the cached success response.
-    rememberEtag(cacheKey, cached.etag, cached.body, cached.headers);
-    return new Response(cached.body, { status: 200, headers: cached.headers });
-  }
-
-  if (response.ok) {
-    const etag = response.headers.get('etag');
-    if (etag) {
-      const body = await response.arrayBuffer();
-      rememberEtag(cacheKey, etag, body, response.headers);
-      return new Response(body, { status: response.status, headers: response.headers });
-    }
-  }
-
-  return response;
-};
-
-// ---- Own rate-limit cooldown (deliberately NOT shared with github/rate-limit.js) ----
-const MAX_COOLDOWN_MS = 15 * 60 * 1000;
-const DEFAULT_COOLDOWN_MS = 60 * 1000;
-let rateLimitedUntil = 0;
-
-const headerValue = (headers, name) => {
-  if (!headers) return undefined;
-  if (typeof headers.get === 'function') return headers.get(name);
-  return headers[name];
-};
+// NOTE: ETag conditional-GET cache and rate-limit cooldown have been dropped
+// with the pivot to CLI transports. Each call spawns a fresh `glab` process,
+// so there is no persistent connection to attach conditional headers to, and
+// rate-limit state cannot be shared across invocations. The tradeoff is higher
+// latency per call (process spawn overhead) and no 304 short-circuit, but
+// simpler state management and no module-level mutable cache. Callers that
+// relied on `isGitLabRateLimited()` will always see false (no cooldown active).
 
 /**
- * Record a cooldown after a GitLab 429. Accepts a fetch Response or any object
- * carrying headers (response, `retry-after` seconds, or `RateLimit-Reset`
- * Unix seconds).
+ * Spawn a CLI binary and return { stdout, stderr, exitCode }.
+ * Rejects if the process does not finish within REQUEST_TIMEOUT_MS.
  */
-export function noteGitLabRateLimit(error) {
-  const headers = error?.headers;
-  let retryMs = null;
-  const retryAfter = headerValue(headers, 'retry-after');
-  if (retryAfter !== undefined && retryAfter !== null) {
-    const secs = Number(retryAfter);
-    if (Number.isFinite(secs) && secs > 0) retryMs = secs * 1000;
+function spawnCli(bin, args, env, timeoutMs = REQUEST_TIMEOUT_MS) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(bin, args, {
+      env: { ...process.env, ...env },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => { stdout += chunk; });
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      reject(new Error(`CLI ${bin} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      resolve({ stdout, stderr, exitCode: code ?? 1 });
+    });
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+  });
+}
+
+/**
+ * Run a `glab api` call and parse the response envelope.
+ *
+ * `glab api --include` outputs:
+ *   <status line: HTTP/1.1 200 OK>
+ *   <headers, one per line>
+ *   <empty line>
+ *   <JSON body>
+ *
+ * Without `--include`, stdout is just the JSON body on success.
+ */
+async function glabApiCall(endpoint, { method = 'GET', body, raw, paginate, glabBin, token }) {
+  const args = ['api', '--include'];
+  if (method !== 'GET') args.push('-X', method);
+  if (paginate) args.push('--paginate');
+  if (raw) args.push('--header', 'Accept: text/plain');
+  if (body !== undefined) args.push('--header', 'Content-Type: application/json', '-d', JSON.stringify(body));
+  args.push(endpoint);
+
+  let result;
+  try {
+    result = await spawnCli(glabBin, args, { GITLAB_TOKEN: token });
+  } catch (err) {
+    return { status: 500, headers: {}, data: null, page: null, error: err.message };
   }
-  if (retryMs === null) {
-    const reset = headerValue(headers, 'ratelimit-reset');
-    if (reset !== undefined && reset !== null) {
-      const delta = Number(reset) * 1000 - Date.now();
-      if (Number.isFinite(delta) && delta > 0) retryMs = delta;
+
+  const { stdout, stderr, exitCode } = result;
+
+  if (exitCode !== 0 && !stdout.trim()) {
+    return { status: 500, headers: {}, data: null, page: null, error: stderr.trim() || `glab exited with code ${exitCode}` };
+  }
+
+  // Parse --include output: status line, headers, blank line, body.
+  const lines = stdout.split('\n');
+  let status = 200;
+  const headers = {};
+  let bodyStart = 0;
+
+  const statusMatch = lines[0]?.match(/HTTP\/\S+\s+(\d+)/);
+  if (statusMatch) {
+    status = Number(statusMatch[1]);
+    for (let i = 1; i < lines.length; i++) {
+      if (lines[i].trim() === '') {
+        bodyStart = i + 1;
+        break;
+      }
+      const colonIdx = lines[i].indexOf(':');
+      if (colonIdx > 0) {
+        headers[lines[i].slice(0, colonIdx).trim().toLowerCase()] = lines[i].slice(colonIdx + 1).trim();
+      }
     }
   }
-  if (retryMs === null) retryMs = DEFAULT_COOLDOWN_MS;
-  retryMs = Math.min(retryMs, MAX_COOLDOWN_MS);
-  const until = Date.now() + retryMs;
-  if (until > rateLimitedUntil) {
-    rateLimitedUntil = until;
-    console.warn(`[gitlab] rate limited — pausing GitLab calls for ~${Math.round(retryMs / 1000)}s`);
+
+  const bodyText = lines.slice(bodyStart).join('\n').trim();
+  if (!bodyText) {
+    return { status, headers, data: null, page: null };
+  }
+
+  if (raw) {
+    return { status, headers, data: bodyText, page: null };
+  }
+
+  try {
+    return { status, headers, data: JSON.parse(bodyText), page: null };
+  } catch {
+    return { status, headers, data: bodyText, page: null };
   }
 }
 
-export function isGitLabRateLimited() {
-  return Date.now() < rateLimitedUntil;
-}
+// ---- Rate-limit helpers (no-ops with CLI transport) ----
+export function noteGitLabRateLimit() { /* no-op: CLI processes are stateless */ }
+export function isGitLabRateLimited() { return false; }
 
 // ---- Response helpers ----
 
-const joinApiUrl = (baseUrl, path) => {
-  const base = String(baseUrl || getGitLabDefaultBaseUrl()).replace(/\/+$/, '');
-  const p = typeof path === 'string' && path ? (path.startsWith('/') ? path : `/${path}`) : '';
-  return `${base}/api/v4${p}`;
-};
-
-const headersToObject = (headers) => {
-  const out = {};
-  if (!headers) return out;
-  if (typeof headers.forEach === 'function') {
-    headers.forEach((value, key) => {
-      out[key] = value;
-    });
-  } else if (typeof headers === 'object') {
-    for (const [key, value] of Object.entries(headers)) {
-      out[key] = value;
-    }
-  }
-  return out;
-};
-
-const parsePageInfo = (headers) => {
-  const get = (name) => {
-    const value = headerValue(headers, name);
-    return typeof value === 'string' ? value : '';
-  };
-  const pageHeader = get('x-page');
-  const nextPage = get('x-next-page');
-  const totalPages = get('x-total-pages');
-  const linkHeader = get('link');
-  const relNextMatch = linkHeader.match(/<([^>]+)>\s*;\s*rel="next"/);
-  const page = pageHeader ? Number(pageHeader) : null;
-  const next = nextPage ? Number(nextPage) : null;
-  const total = totalPages ? Number(totalPages) : null;
-  const hasMore = next != null ? next > 0 : Boolean(relNextMatch);
-  const parsed = { page, next, total, hasMore };
-  if (relNextMatch) {
-    parsed.nextUrl = relNextMatch[1];
-  }
-  return parsed;
-};
-
-const parseData = async (response) => {
-  const text = await response.text();
-  if (!text) {
-    return null;
-  }
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
-};
-
 const encodeProject = (pathWithNamespace) => encodeURIComponent(String(pathWithNamespace));
 
+// Build the relative API path for glab CLI. glab resolves the base URL from its
+// own config, so we pass only the /api/v4/... portion.
+const apiPath = (path) => {
+  const p = typeof path === 'string' && path ? (path.startsWith('/') ? path : `/${path}`) : '';
+  return `/api/v4${p}`;
+};
+
 /**
- * Create a raw-fetch GitLab REST v4 client. `request` never throws for HTTP
- * error statuses — it returns `{ status, headers, data, page }` so callers can
- * branch on status codes. On 429 it also sets `error: 'GitLab rate limited'`
- * and records a module-level cooldown.
+ * Create a CLI-backed GitLab REST v4 client. Spawns `glab api` for each
+ * request. `request` never throws for HTTP error statuses — it returns
+ * `{ status, headers, data, page }` so callers can branch on status codes.
  */
 export function createGitLabClient({ token, baseUrl }) {
   const effectiveBaseUrl = normalizeBaseForClient(baseUrl);
+  const glabBin = process.env.GLAB_BIN || '/home/user/.local/bin/glab';
 
   const request = async (path, options = {}) => {
     const method = (typeof options.method === 'string' ? options.method : 'GET').toUpperCase();
     const query = options.query && typeof options.query === 'object' ? options.query : {};
     const body = options.body;
-    const callerSignal = options.signal;
 
-    if (isGitLabRateLimited()) {
-      return { status: 429, headers: {}, data: null, page: null, error: 'GitLab rate limited' };
-    }
+    // Build the relative endpoint path with query params baked in.
+    let endpoint = apiPath(path);
 
-    let url = joinApiUrl(effectiveBaseUrl, path);
     const qs = new URLSearchParams();
     let hasQuery = false;
     for (const [key, value] of Object.entries(query)) {
@@ -196,61 +150,11 @@ export function createGitLabClient({ token, baseUrl }) {
       hasQuery = true;
     }
     if (hasQuery) {
-      url += `${url.includes('?') ? '&' : '?'}${qs.toString()}`;
+      endpoint += `${endpoint.includes('?') ? '&' : '?'}${qs.toString()}`;
     }
 
-    const headers = {
-      'PRIVATE-TOKEN': token,
-      accept: 'application/json',
-    };
-    const fetchOptions = {
-      method,
-      headers,
-      redirect: 'manual',
-    };
-    if (body !== undefined) {
-      headers['content-type'] = 'application/json';
-      fetchOptions.body = JSON.stringify(body);
-    }
-    if (callerSignal) {
-      fetchOptions.signal = callerSignal;
-    }
-
-    const conditionalFetch = createConditionalFetch(token);
-
-    let response = await conditionalFetch(url, fetchOptions);
-
-    // Follow a project-move redirect exactly once. GitLab redirects
-    // (301/302/308) come with a `Location` for the new project URL; a manual
-    // redirect keeps our PRIVATE-TOKEN header across the hop. Only follow
-    // same-origin redirects to avoid leaking the token to a different host.
-    let redirects = 0;
-    const baseHost = new URL(url).host;
-    while (
-      (response.status === 301 || response.status === 302 || response.status === 308)
-      && headerValue(response.headers, 'location')
-      && redirects < 1
-    ) {
-      const location = headerValue(response.headers, 'location');
-      const nextUrl = new URL(location, url).toString();
-      if (new URL(nextUrl).host !== baseHost) break;
-      response = await conditionalFetch(nextUrl, fetchOptions);
-      redirects += 1;
-    }
-
-    const result = {
-      status: response.status,
-      headers: headersToObject(response.headers),
-      data: await parseData(response),
-      page: parsePageInfo(response.headers),
-    };
-
-    if (response.status === 429) {
-      noteGitLabRateLimit(response);
-      result.error = 'GitLab rate limited';
-    }
-
-    return result;
+    const paginate = method === 'GET' && hasQuery;
+    return glabApiCall(endpoint, { method, body, paginate, glabBin, token });
   };
 
   return {
@@ -294,9 +198,6 @@ export function createGitLabClient({ token, baseUrl }) {
       request(`/projects/${encodeProject(pathWithNamespace)}/merge_requests/${iid}/merge`, { method: 'PUT', body }),
     branches: (pathWithNamespace, params = {}) =>
       request(`/projects/${encodeProject(pathWithNamespace)}/repository/branches`, { query: params }),
-    // Project members (direct + inherited) are the assignable/mentionable user
-    // set. `members/all` includes inherited group members; `query` filters
-    // server-side by username/name/email.
     members: (pathWithNamespace, params = {}) =>
       request(`/projects/${encodeProject(pathWithNamespace)}/members/all`, { query: params }),
     labels: (pathWithNamespace, params = {}) =>

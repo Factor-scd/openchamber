@@ -2,16 +2,16 @@
 
 ## Purpose
 
-- This module owns GitLab auth (Personal Access Token), raw REST v4 client access, remote-URL repo resolution, and GitLab issue / merge-request (MR) APIs for OpenChamber, including MR create/update/merge writes.
+- This module owns GitLab auth (Personal Access Token), CLI-backed REST v4 client access, remote-URL repo resolution, and GitLab issue / merge-request (MR) APIs for OpenChamber, including MR create/update/merge writes.
 - From a user perspective, this is the layer that lets the app show GitLab issues and merge requests for a local project, including comments and per-file diffs, and create, edit, and merge merge requests.
-- The module mirrors `packages/web/server/lib/github/` but uses a **Personal Access Token (PAT)** with a configurable base URL (gitlab.com by default, or a self-hosted instance), and talks to GitLab's REST v4 API directly via `fetch` — no new dependencies.
+- The module mirrors `packages/web/server/lib/github/` but uses a **Personal Access Token (PAT)** with a configurable base URL (gitlab.com by default, or a self-hosted instance), and talks to GitLab's REST v4 API via the **`glab` CLI** transport instead of raw `fetch`.
 
 ## Entrypoints and structure
 
 - `packages/web/server/lib/gitlab/index.js`: public server entrypoint re-exports.
 - `packages/web/server/lib/gitlab/routes.js`: Express route registration for `/api/gitlab/*` endpoints.
 - `packages/web/server/lib/gitlab/auth.js`: PAT auth storage, multi-account support, base URL normalization.
-- `packages/web/server/lib/gitlab/client.js`: raw `fetch` GitLab REST v4 client (timeout, ETag conditional GET, rate-limit cooldown, pagination, redirect handling).
+- `packages/web/server/lib/gitlab/client.js`: CLI-backed `glab api` client (process spawn with 8s timeout, `--include` for HTTP status/headers, `--paginate` for list endpoints). Token is passed via `GITLAB_TOKEN` env var.
 - `packages/web/server/lib/gitlab/repo.js`: GitLab remote URL parsing and directory-to-repo resolution.
 - `packages/web/server/lib/opencode/feature-routes-runtime.js`: API route layer that calls this module (via `registerGitLabRoutes`).
 - `packages/web/src/api/gitlab.ts`: web client wrapper for GitLab endpoints.
@@ -62,13 +62,12 @@ Nothing in the client or repo layers assumes the token came from a PAT.
 
 ## Client behavior
 
-- Base URL joining: `{baseUrl}/api/v4{path}`. Project `:id` segments are URL-encoded with `encodeURIComponent` (e.g. `group/sub` -> `group%2Fsub`) and never double-encoded.
-- Per-request timeout: 8000 ms via `AbortSignal.timeout`, unless the caller passes its own signal.
-- ETag conditional-GET cache: keyed `token\nurl`, max 300 LRU entries; a `304` is replayed from cache as a `200`. GET only.
-- Pagination: `x-page`, `x-next-page`, `x-total-pages`, and the `Link` header (`rel="next"`) are parsed into the returned `page` object (`hasMore` = a next page exists).
-- Redirects: `301`/`302`/`308` with a `Location` header are followed exactly once (project moves) with `redirect: 'manual'`, preserving `PRIVATE-TOKEN` across the hop.
-- Rate limits: a `429` records a module-level cooldown (honoring `Retry-After` / `RateLimit-Reset` when present) and surfaces `{ status: 429, error: 'GitLab rate limited' }`. While the cooldown is active, requests short-circuit without hitting the network.
+- Transport: each call spawns a `glab api` process with `--include` for HTTP status/headers. Auth is passed via `GITLAB_TOKEN` env var (never on argv). Binary path: `GLAB_BIN` env or `/home/user/.local/bin/glab`.
+- Base URL: the `baseUrl` parameter is passed to the client constructor for compatibility but `glab` resolves the instance from its own config. The `--include` flag provides HTTP status codes and response headers.
+- Per-request timeout: 8000 ms via `AbortSignal.timeout` on the spawned process. The process is killed with `SIGKILL` on timeout.
+- Pagination: `--paginate` is passed for GET requests with query params, causing `glab` to fetch all pages in a single call. The returned `page` object is `null` since pagination is handled by the CLI.
 - `request` never throws for HTTP error statuses — callers branch on `status`.
+- ETag cache and rate-limit cooldown have been dropped with the CLI pivot. Each call spawns a fresh process, so there is no persistent connection for conditional requests or shared rate-limit state. `isGitLabRateLimited()` always returns `false`; `noteGitLabRateLimit()` is a no-op.
 
 ## API integration overview
 
@@ -148,5 +147,5 @@ Conventions mirror `github/routes.js`:
 - Keep the response shapes in lockstep with `GitLab*` types in `packages/ui/src/lib/api/types.ts`.
 - Never log tokens. Error messages must not include the access token.
 - Do not double-encode project paths; convenience methods already call `encodeURIComponent` on the `pathWithNamespace`.
-- The ETag cache and rate-limit cooldown are module-level and per-instance — they are NOT shared with the GitHub module.
+- The `glab` CLI handles authentication, base URL resolution, and pagination internally. The client does not maintain its own ETag cache or rate-limit cooldown — each call spawns a fresh process.
 - To add further GitLab write operations, add the endpoint in `routes.js`, add a convenience method in `client.js`, and extend the shared types — mirror the existing issue/MR write routes and the GitHub PR write routes.
