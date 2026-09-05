@@ -6,6 +6,11 @@ jobs:
   deploy:
     runs-on: linux-amd64
     steps:
+      - name: Checkout
+        run: |
+          rm -rf $GITHUB_WORKSPACE
+          mkdir -p $GITHUB_WORKSPACE
+          git clone --depth 1 --branch custom https://gitea@giteassh.buzzbee.dev:Vibing/openchamber.git $GITHUB_WORKSPACE
       - name: Show revision
         run: git -C $GITHUB_WORKSPACE rev-parse --short HEAD
       - name: Copy workspace to build dir
