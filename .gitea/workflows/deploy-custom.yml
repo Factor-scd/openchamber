@@ -28,3 +28,10 @@ jobs:
         run: ln -sfn /opt/app/deploy/custom-build /opt/app/deploy/current
       - name: Restart service
         run: sudo systemctl restart openchamber-custom
+
+      - name: Notify on successful deploy
+        run: |
+          SHA=$(git -C $GITHUB_WORKSPACE/repo rev-parse HEAD)
+          MSG=$(git -C $GITHUB_WORKSPACE/repo log -1 --format=%s)
+          AUTHOR=$(git -C $GITHUB_WORKSPACE/repo log -1 --format=%an)
+          /opt/app/.local/bin/openchamber-notify-deploy.sh "$SHA" "$MSG" "$AUTHOR"
