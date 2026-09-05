@@ -131,24 +131,28 @@ async function teaApiCall(endpoint, { method = 'GET', body, raw, teaBin, token }
     data = bodyText;
   }
 
-  // Derive pagination from the Link header (H2 fix).
+  // Derive pagination info object matching the pre-pivot parsePageInfo shape.
+  // routes.js reads resp.page?.hasMore, resp.page?.nextUrl, etc.
   const { next } = parseLinkHeader(headers.link);
   const listIsArray = Array.isArray(data);
-  const hasMore = listIsArray ? next !== null : false;
-  // page is the caller's current page (extracted from the request context by the
-  // caller); for the client layer we return the page number derived from the
-  // Link header's "next" URL if present, otherwise 1.
-  let page = 1;
-  if (next) {
+  const totalRaw = headers['x-total-count'];
+  const total = totalRaw ? Number(totalRaw) : null;
+  let currentPage = null;
+  if (listIsArray && next) {
     const pageMatch = next.match(/[?&]page=(\d+)/);
     if (pageMatch) {
-      // next page exists — the *current* page is next - 1 (rough heuristic;
-      // callers that know the page can override).
-      page = Math.max(1, Number(pageMatch[1]) - 1);
+      currentPage = Math.max(1, Number(pageMatch[1]) - 1);
     }
   }
+  const pageInfo = {
+    page: currentPage,
+    next: next || null,
+    total: total !== null && Number.isFinite(total) ? total : null,
+    hasMore: listIsArray ? next !== null : false,
+    nextUrl: next || undefined,
+  };
 
-  return { status, headers, data, page: listIsArray ? page : null, hasMore: listIsArray ? hasMore : undefined };
+  return { status, headers, data, page: pageInfo };
 }
 
 // ---- Rate-limit helpers (no-ops with CLI transport) ----

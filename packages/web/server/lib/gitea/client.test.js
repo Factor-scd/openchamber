@@ -192,37 +192,51 @@ describe('createGiteaClient request basics', () => {
 });
 
 describe('pagination', () => {
-  test('returns hasMore=true when Link header has rel="next"', async () => {
+  test('page is an object with hasMore=true when Link header has rel="next"', async () => {
     spawnMock = mockSpawn(
       cliOutput([{ id: 1 }], {
         headers: {
           'Link': '<https://gitea.example.com/api/v1/repos/o/r/issues?limit=1&page=2>; rel="next"',
+          'X-Total-Count': '10',
         },
       }),
     );
 
     const client = createGiteaClient({ token: 't', baseUrl: 'https://gitea.example.com' });
     const result = await client.issues('o', 'r', { limit: 1, page: 1 });
-    expect(result.hasMore).toBe(true);
-    expect(result.page).toBe(1);
+    // page is the object shape that routes.js expects
+    expect(result.page).toEqual(expect.objectContaining({
+      hasMore: true,
+      nextUrl: 'https://gitea.example.com/api/v1/repos/o/r/issues?limit=1&page=2',
+      next: 'https://gitea.example.com/api/v1/repos/o/r/issues?limit=1&page=2',
+      page: 1,
+      total: 10,
+    }));
     expect(Array.isArray(result.data)).toBe(true);
   });
 
-  test('returns hasMore=false when no Link header', async () => {
+  test('page is an object with hasMore=false when no Link header', async () => {
     spawnMock = mockSpawn(cliOutput([{ id: 1 }]));
 
     const client = createGiteaClient({ token: 't', baseUrl: 'https://gitea.example.com' });
     const result = await client.issues('o', 'r', { limit: 50 });
-    expect(result.hasMore).toBe(false);
-    expect(result.page).toBe(1);
+    expect(result.page).toEqual(expect.objectContaining({
+      hasMore: false,
+      next: null,
+      total: null,
+    }));
   });
 
-  test('page is null for non-array responses', async () => {
+  test('page is an object for non-array responses too', async () => {
     spawnMock = mockSpawn(cliOutput({ id: 42 }));
 
     const client = createGiteaClient({ token: 't', baseUrl: 'https://gitea.example.com' });
     const result = await client.user();
-    expect(result.page).toBeNull();
+    expect(result.page).toEqual(expect.objectContaining({
+      hasMore: false,
+      next: null,
+      page: null,
+    }));
   });
 
   test('does NOT pass --paginate flag to tea (C1 fix)', async () => {

@@ -187,37 +187,50 @@ describe('createGitLabClient request basics', () => {
 });
 
 describe('pagination', () => {
-  test('returns hasMore=true when Link header has rel="next"', async () => {
+  test('page is an object with hasMore=true when Link header has rel="next"', async () => {
     spawnMock = mockSpawn(
       cliOutput([{ id: 1 }], {
         headers: {
           'Link': '<https://gitlab.com/api/v4/projects/g%2Fp/issues?page=2>; rel="next"',
+          'X-Total': '10',
         },
       }),
     );
 
     const client = createGitLabClient({ token: 't', baseUrl: 'https://gitlab.com' });
     const result = await client.issues('g/p', { per_page: 1 });
-    expect(result.hasMore).toBe(true);
-    expect(result.page).toBe(1);
+    expect(result.page).toEqual(expect.objectContaining({
+      hasMore: true,
+      nextUrl: 'https://gitlab.com/api/v4/projects/g%2Fp/issues?page=2',
+      next: 'https://gitlab.com/api/v4/projects/g%2Fp/issues?page=2',
+      page: 1,
+      total: 10,
+    }));
     expect(Array.isArray(result.data)).toBe(true);
   });
 
-  test('returns hasMore=false when no Link header', async () => {
+  test('page is an object with hasMore=false when no Link header', async () => {
     spawnMock = mockSpawn(cliOutput([{ id: 1 }]));
 
     const client = createGitLabClient({ token: 't', baseUrl: 'https://gitlab.com' });
     const result = await client.issues('g/p', { per_page: 50 });
-    expect(result.hasMore).toBe(false);
-    expect(result.page).toBe(1);
+    expect(result.page).toEqual(expect.objectContaining({
+      hasMore: false,
+      next: null,
+      total: null,
+    }));
   });
 
-  test('page is null for non-array responses', async () => {
+  test('page is an object for non-array responses too', async () => {
     spawnMock = mockSpawn(cliOutput({ id: 42 }));
 
     const client = createGitLabClient({ token: 't', baseUrl: 'https://gitlab.com' });
     const result = await client.user();
-    expect(result.page).toBeNull();
+    expect(result.page).toEqual(expect.objectContaining({
+      hasMore: false,
+      next: null,
+      page: null,
+    }));
   });
 });
 
