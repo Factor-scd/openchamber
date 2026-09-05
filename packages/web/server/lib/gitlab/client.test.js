@@ -12,7 +12,13 @@ afterAll(() => {
   fs.rmSync(TEMP_DATA_DIR, { recursive: true, force: true });
 });
 
-// Mock child_process.spawn to simulate `glab api --include` output.
+// Mock child_process.spawn to simulate real `glab api` output.
+// Real glab behavior:
+//   - `--include` writes status+headers+body ALL to stdout (not stderr)
+//   - On error, stderr gets human-readable summary (e.g. "glab: 401 Unauthorized (HTTP 401)")
+//   - `--paginate` does NOT exist
+//   - GITLAB_TOKEN env IS respected (unlike tea's GITEA_SERVER_TOKEN)
+//   - Paths must NOT include /api/v4 prefix (glab adds it)
 const originalSpawn = (await import('child_process')).spawn;
 let spawnMock = null;
 
@@ -28,11 +34,10 @@ const {
 } = await import('./client.js');
 
 /**
- * Build the `glab api --include` output format:
- *   <status line>\n<header: value>\n...\n\n<body>
+ * Build real glab --include output: status+headers+body all on stdout.
  */
 const cliOutput = (data, { status = 200, headers = {} } = {}) => {
-  const lines = [`HTTP/1.1 ${status} OK`];
+  const lines = [`HTTP/2.0 ${status} OK`];
   for (const [k, v] of Object.entries(headers)) {
     lines.push(`${k}: ${v}`);
   }
@@ -42,8 +47,8 @@ const cliOutput = (data, { status = 200, headers = {} } = {}) => {
 };
 
 /**
- * Create a vi.fn() mock spawn function that calls `on('close')` with the given
- * exit code and delivers `output` on stdout.
+ * Create a vi.fn() mock spawn that delivers `output` on stdout and optionally
+ * a stderr message, matching real glab --include behavior.
  */
 const mockSpawn = (output, { exitCode = 0, stderr = '' } = {}) => {
   return vi.fn((...args) => {
@@ -74,13 +79,14 @@ describe('createGitLabClient request basics', () => {
     expect(spawnMock).toHaveBeenCalledTimes(1);
     const [bin, args, opts] = spawnMock.mock.calls[0];
     expect(bin).toBe('/home/user/.local/bin/glab');
-    expect(args).toEqual(['api', '--include', '/api/v4/user']);
+    // C4 fix: path has NO /api/v4 prefix — glab adds it.
+    expect(args).toEqual(['api', '--include', '/user']);
     expect(opts.env.GITLAB_TOKEN).toBe('glpat-token');
     expect(result).toMatchObject({ status: 200, data: { id: 42, username: 'alice' } });
     expect(result.error).toBeUndefined();
   });
 
-  test('joins a custom base URL path without duplicating /api/v4', async () => {
+  test('joins a custom base URL path without /api/v4 prefix (C4 fix)', async () => {
     spawnMock = mockSpawn(cliOutput([]));
 
     const client = createGitLabClient({ token: 't', baseUrl: 'https://gitlab.example.com/gitlab/' });
@@ -88,8 +94,9 @@ describe('createGitLabClient request basics', () => {
 
     const [, args] = spawnMock.mock.calls[0];
     const endpoint = args[args.length - 1];
-    // CLI transport passes relative paths; base URL is resolved by glab's config.
-    expect(endpoint).toContain('/api/v4/projects/group%2Fsub/issues?state=opened');
+    // C4 fix: path does NOT include /api/v4 — glab adds it automatically.
+    expect(endpoint).toContain('/projects/group%2Fsub/issues?state=opened');
+    expect(endpoint).not.toContain('/api/v4');
   });
 
   test('encodes project path namespaces exactly once', async () => {
@@ -160,21 +167,56 @@ describe('createGitLabClient request basics', () => {
   });
 
   test('returns 500 on non-zero exit with no stdout', async () => {
-    spawnMock = mockSpawn('', { exitCode: 1, stderr: 'not authenticated' });
+    spawnMock = mockSpawn('', { exitCode: 1, stderr: 'glab: 401 Unauthorized (HTTP 401)' });
 
     const client = createGitLabClient({ token: 't', baseUrl: 'https://gitlab.com' });
     const result = await client.user();
     expect(result.status).toBe(500);
-    expect(result.error).toBe('not authenticated');
+    expect(result.error).toBe('glab: 401 Unauthorized (HTTP 401)');
+  });
+
+  test('does NOT pass --paginate flag to glab', async () => {
+    spawnMock = mockSpawn(cliOutput([]));
+
+    const client = createGitLabClient({ token: 't', baseUrl: 'https://gitlab.com' });
+    await client.issues('g/p', { state: 'opened' });
+
+    const [, args] = spawnMock.mock.calls[0];
+    expect(args).not.toContain('--paginate');
   });
 });
 
 describe('pagination', () => {
-  test('page object is null (CLI handles pagination)', async () => {
-    spawnMock = mockSpawn(cliOutput([]));
+  test('returns hasMore=true when Link header has rel="next"', async () => {
+    spawnMock = mockSpawn(
+      cliOutput([{ id: 1 }], {
+        headers: {
+          'Link': '<https://gitlab.com/api/v4/projects/g%2Fp/issues?page=2>; rel="next"',
+        },
+      }),
+    );
 
     const client = createGitLabClient({ token: 't', baseUrl: 'https://gitlab.com' });
-    const result = await client.issues('g/p', { page: 2 });
+    const result = await client.issues('g/p', { per_page: 1 });
+    expect(result.hasMore).toBe(true);
+    expect(result.page).toBe(1);
+    expect(Array.isArray(result.data)).toBe(true);
+  });
+
+  test('returns hasMore=false when no Link header', async () => {
+    spawnMock = mockSpawn(cliOutput([{ id: 1 }]));
+
+    const client = createGitLabClient({ token: 't', baseUrl: 'https://gitlab.com' });
+    const result = await client.issues('g/p', { per_page: 50 });
+    expect(result.hasMore).toBe(false);
+    expect(result.page).toBe(1);
+  });
+
+  test('page is null for non-array responses', async () => {
+    spawnMock = mockSpawn(cliOutput({ id: 42 }));
+
+    const client = createGitLabClient({ token: 't', baseUrl: 'https://gitlab.com' });
+    const result = await client.user();
     expect(result.page).toBeNull();
   });
 });

@@ -89,7 +89,8 @@ export const GiteaSettings: React.FC<{ embedded?: boolean }> = ({ embedded = fal
       toast.success(t('settings.gitea.page.toast.connected'));
     } catch (error) {
       console.error('Failed to connect Gitea:', error);
-      toast.error(t('settings.gitea.page.errors.failed'));
+      const message = error instanceof Error ? error.message : String(error);
+      toast.error(t('settings.gitea.page.errors.failed'), { description: message });
     } finally {
       setIsBusy(false);
     }
@@ -149,7 +150,24 @@ export const GiteaSettings: React.FC<{ embedded?: boolean }> = ({ embedded = fal
   }, [runtimeGitea, setStatus, t]);
 
   if (isLoading) {
-    return null;
+    return (
+      <SettingsSection
+        title={t('settings.gitea.page.title')}
+        description={t('settings.gitea.page.description')}
+        info={t('settings.gitea.page.tooltip.connectAccount')}
+        settingsItem="git.gitea-account"
+      >
+        <div className="rounded-lg bg-[var(--surface-elevated)]/70 overflow-hidden flex flex-col">
+          <div className="px-4 py-3 flex items-center gap-4 animate-pulse">
+            <div className="h-10 w-10 shrink-0 rounded-full bg-[var(--surface-muted)]" />
+            <div className="flex-1 space-y-2">
+              <div className="h-4 w-32 bg-[var(--surface-muted)] rounded" />
+              <div className="h-3 w-48 bg-[var(--surface-muted)] rounded" />
+            </div>
+          </div>
+        </div>
+      </SettingsSection>
+    );
   }
 
   const connected = Boolean(status?.connected);
@@ -242,6 +260,9 @@ export const GiteaSettings: React.FC<{ embedded?: boolean }> = ({ embedded = fal
                 {t('settings.gitea.page.actions.connect')}
               </Button>
             </div>
+            <p className="typography-micro text-muted-foreground">
+              Authenticates via the tea CLI binary and your stored token.
+            </p>
           </div>
         )}
 

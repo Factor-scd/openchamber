@@ -1,7 +1,6 @@
 import { spawn } from 'child_process';
 import { getGitLabAuth, getGitLabDefaultBaseUrl } from './auth.js';
 
-const GLAB_BIN = process.env.GLAB_BIN || '/home/user/.local/bin/glab';
 const REQUEST_TIMEOUT_MS = 8000;
 
 // NOTE: ETag conditional-GET cache and rate-limit cooldown have been dropped
@@ -42,20 +41,44 @@ function spawnCli(bin, args, env, timeoutMs = REQUEST_TIMEOUT_MS) {
 }
 
 /**
+ * Parse the `Link` header value to extract rel="next" and rel="prev" URLs.
+ * Returns { next, prev } with the raw URL strings (or null).
+ */
+function parseLinkHeader(linkHeader) {
+  if (!linkHeader) return { next: null, prev: null };
+  const result = { next: null, prev: null };
+  const parts = linkHeader.split(',');
+  for (const part of parts) {
+    const match = part.match(/<([^>]+)>;\s*rel="(\w+)"/);
+    if (match) {
+      const [, url, rel] = match;
+      if (rel === 'next') result.next = url;
+      if (rel === 'prev') result.prev = url;
+    }
+  }
+  return result;
+}
+
+/**
  * Run a `glab api` call and parse the response envelope.
  *
- * `glab api --include` outputs:
+ * `glab api --include` outputs everything to **stdout**:
  *   <status line: HTTP/1.1 200 OK>
  *   <headers, one per line>
  *   <empty line>
  *   <JSON body>
  *
- * Without `--include`, stdout is just the JSON body on success.
+ * On non-zero exit, stderr gets a human-readable error summary (e.g.,
+ * `glab: 401 Unauthorized (HTTP 401)`).
+ *
+ * GITLAB_TOKEN env var IS respected by glab (unlike tea's GITEA_SERVER_TOKEN).
+ *
+ * Pagination: `--paginate` does NOT exist in glab.  We parse the `Link` header
+ * to derive `page` and `hasMore`.
  */
-async function glabApiCall(endpoint, { method = 'GET', body, raw, paginate, glabBin, token }) {
+async function glabApiCall(endpoint, { method = 'GET', body, raw, glabBin, token }) {
   const args = ['api', '--include'];
   if (method !== 'GET') args.push('-X', method);
-  if (paginate) args.push('--paginate');
   if (raw) args.push('--header', 'Accept: text/plain');
   if (body !== undefined) args.push('--header', 'Content-Type: application/json', '-d', JSON.stringify(body));
   args.push(endpoint);
@@ -69,6 +92,8 @@ async function glabApiCall(endpoint, { method = 'GET', body, raw, paginate, glab
 
   const { stdout, stderr, exitCode } = result;
 
+  // glab --include puts status+headers+body all on stdout.
+  // On error, stdout may still have the full response, and stderr has the summary.
   if (exitCode !== 0 && !stdout.trim()) {
     return { status: 500, headers: {}, data: null, page: null, error: stderr.trim() || `glab exited with code ${exitCode}` };
   }
@@ -103,11 +128,26 @@ async function glabApiCall(endpoint, { method = 'GET', body, raw, paginate, glab
     return { status, headers, data: bodyText, page: null };
   }
 
+  let data;
   try {
-    return { status, headers, data: JSON.parse(bodyText), page: null };
+    data = JSON.parse(bodyText);
   } catch {
-    return { status, headers, data: bodyText, page: null };
+    data = bodyText;
   }
+
+  // Derive pagination from the Link header (H2 fix).
+  const { next } = parseLinkHeader(headers.link);
+  const listIsArray = Array.isArray(data);
+  const hasMore = listIsArray ? next !== null : false;
+  let page = 1;
+  if (next) {
+    const pageMatch = next.match(/[?&]page=(\d+)/);
+    if (pageMatch) {
+      page = Math.max(1, Number(pageMatch[1]) - 1);
+    }
+  }
+
+  return { status, headers, data, page: listIsArray ? page : null, hasMore: listIsArray ? hasMore : undefined };
 }
 
 // ---- Rate-limit helpers (no-ops with CLI transport) ----
@@ -119,16 +159,17 @@ export function isGitLabRateLimited() { return false; }
 const encodeProject = (pathWithNamespace) => encodeURIComponent(String(pathWithNamespace));
 
 // Build the relative API path for glab CLI. glab resolves the base URL from its
-// own config, so we pass only the /api/v4/... portion.
+// own config, so we pass the path WITHOUT the /api/v4 prefix — glab adds it.
 const apiPath = (path) => {
   const p = typeof path === 'string' && path ? (path.startsWith('/') ? path : `/${path}`) : '';
-  return `/api/v4${p}`;
+  return p;
 };
 
 /**
  * Create a CLI-backed GitLab REST v4 client. Spawns `glab api` for each
  * request. `request` never throws for HTTP error statuses — it returns
- * `{ status, headers, data, page }` so callers can branch on status codes.
+ * `{ status, headers, data, page, hasMore }` so callers can branch on status
+ * codes.
  */
 export function createGitLabClient({ token, baseUrl }) {
   const effectiveBaseUrl = normalizeBaseForClient(baseUrl);
@@ -153,8 +194,7 @@ export function createGitLabClient({ token, baseUrl }) {
       endpoint += `${endpoint.includes('?') ? '&' : '?'}${qs.toString()}`;
     }
 
-    const paginate = method === 'GET' && hasQuery;
-    return glabApiCall(endpoint, { method, body, paginate, glabBin, token });
+    return glabApiCall(endpoint, { method, body, glabBin, token });
   };
 
   return {

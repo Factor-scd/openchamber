@@ -543,7 +543,12 @@ export function GiteaIssuePickerDialog({
           ) : null}
 
           {error ? (
-            <div className="text-center text-muted-foreground py-8 break-words">{error}</div>
+            <div className="text-center text-muted-foreground py-8 space-y-2">
+              <div className="break-words">{error}</div>
+              <Button variant="outline" size="sm" onClick={refresh} disabled={isLoading}>
+                {t('session.giteaIssuePicker.actions.refresh')}
+              </Button>
+            </div>
           ) : null}
 
           {directNumber && projectDirectory && gitea && connected ? (
