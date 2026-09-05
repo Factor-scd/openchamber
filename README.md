@@ -1,3 +1,7 @@
+> **Note: This is a custom fork of [OpenChamber](https://github.com/openchamber/openchamber).**
+>
+> This version adds native Gitea and GitLab forge integration by rewriting the clients to use `tea` and `glab` CLI tools as transports. This provides a 1:1 endpoint mapping via a raw REST proxy. Custom releases for this fork are tagged as `custom-vX.Y.Z`.
+
 # <picture><source media="(prefers-color-scheme: dark)" srcset="docs/references/badges/openchamber-logo-dark.svg"><img src="docs/references/badges/openchamber-logo-light.svg" width="32" height="32" align="absmiddle" /></picture> OpenChamber
 
 [![GitHub stars](https://img.shields.io/github/stars/openchamber/openchamber?style=flat&labelColor=100F0F&color=66800B)](https://github.com/openchamber/openchamber/stargazers)
