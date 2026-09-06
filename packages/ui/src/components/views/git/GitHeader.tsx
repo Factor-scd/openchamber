@@ -20,6 +20,8 @@ import type {
   GitRemoteComparison,
   GitHubPullRequest,
   GitHubChecksSummary,
+  GitLabMergeRequestSummary,
+  GiteaPullRequestSummary,
 } from '@/lib/api/types';
 import { useI18n } from '@/lib/i18n';
 import { useDeviceInfo } from '@/lib/device';
@@ -61,6 +63,10 @@ interface GitHeaderProps {
   selectedRepository?: string | null;
   onSelectRepository?: (repository: string) => void;
   repositoryRoot?: string;
+  gitLabMr?: GitLabMergeRequestSummary | null;
+  onOpenGitLabMr?: () => void;
+  giteaPr?: GiteaPullRequestSummary | null;
+  onOpenGiteaPr?: () => void;
 }
 
 const IDENTITY_ICON_MAP: Record<string, IconName> = {
@@ -273,6 +279,10 @@ export const GitHeader: React.FC<GitHeaderProps> = ({
   selectedRepository,
   onSelectRepository,
   repositoryRoot,
+  gitLabMr,
+  onOpenGitLabMr,
+  giteaPr,
+  onOpenGiteaPr,
 }) => {
   const { t } = useI18n();
   const { isMobile } = useDeviceInfo();
@@ -389,6 +399,74 @@ export const GitHeader: React.FC<GitHeaderProps> = ({
     </Tooltip>
   ) : null;
 
+  // GitLab merge request chip, mirroring the GitHub PR chip above. GitLab
+  // states are surfaced with the same PR state palette so merged/closed/open
+  // read identically across providers.
+  const gitLabMrVisualState = gitLabMr
+    ? gitLabMr.state === 'merged'
+      ? 'merged'
+      : gitLabMr.state === 'closed'
+        ? 'closed'
+        : gitLabMr.draft
+          ? 'draft'
+          : 'open'
+    : null;
+
+  const gitLabMrChip = gitLabMr && onOpenGitLabMr ? (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onOpenGitLabMr}
+          className="h-8 gap-1.5 px-2 typography-micro"
+        >
+          <Icon
+            name="gitlab"
+            className="size-3.5"
+            style={{ color: `var(--pr-${gitLabMrVisualState})` }}
+          />
+          <span className="tabular-nums text-foreground/80">!{gitLabMr.number}</span>
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent sideOffset={8}>{t('gitView.header.openMergeRequest')}</TooltipContent>
+    </Tooltip>
+  ) : null;
+
+  // Gitea pull request chip, mirroring the GitLab MR chip above. Gitea states
+  // are surfaced with the same PR state palette so merged/closed/open read
+  // identically across providers.
+  const giteaPrVisualState = giteaPr
+    ? giteaPr.state === 'merged'
+      ? 'merged'
+      : giteaPr.state === 'closed'
+        ? 'closed'
+        : giteaPr.draft
+          ? 'draft'
+          : 'open'
+    : null;
+
+  const giteaPrChip = giteaPr && onOpenGiteaPr ? (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onOpenGiteaPr}
+          className="h-8 gap-1.5 px-2 typography-micro"
+        >
+          <Icon
+            name="gitea"
+            className="size-3.5"
+            style={{ color: `var(--pr-${giteaPrVisualState})` }}
+          />
+          <span className="tabular-nums text-foreground/80">#{giteaPr.number}</span>
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent sideOffset={8}>{t('gitView.header.openPullRequest')}</TooltipContent>
+    </Tooltip>
+  ) : null;
+
   const syncButtons = (
     <SyncActions
       syncAction={syncAction}
@@ -464,6 +542,8 @@ export const GitHeader: React.FC<GitHeaderProps> = ({
 
       <div className="mt-3 flex h-8 min-w-0 items-center gap-2">
         {prChip ? <div className="shrink-0">{prChip}</div> : null}
+        {gitLabMrChip ? <div className="shrink-0">{gitLabMrChip}</div> : null}
+        {giteaPrChip ? <div className="shrink-0">{giteaPrChip}</div> : null}
         <div className="min-w-0 flex-1" />
         {upstreamStatusPill ? (
           <div className="min-w-0 shrink">{upstreamStatusPill}</div>

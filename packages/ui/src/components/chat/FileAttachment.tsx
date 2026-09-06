@@ -556,28 +556,67 @@ interface FilePart {
   source?: Record<string, unknown>;
 }
 
-const GITHUB_ISSUE_LINK_MIME = 'application/vnd.github.issue-link';
-const GITHUB_PR_LINK_MIME = 'application/vnd.github.pull-request-link';
+const FORGE_LINK_MIMES = new Set([
+  'application/vnd.github.issue-link',
+  'application/vnd.github.pull-request-link',
+  'application/vnd.gitlab.issue-link',
+  'application/vnd.gitlab.merge-request-link',
+  'application/vnd.gitea.issue-link',
+  'application/vnd.gitea.pull-request-link',
+]);
+
+const ISSUE_LINK_MIMES = new Set([
+  'application/vnd.github.issue-link',
+  'application/vnd.gitlab.issue-link',
+  'application/vnd.gitea.issue-link',
+]);
+
+const PR_LINK_MIMES = new Set([
+  'application/vnd.github.pull-request-link',
+  'application/vnd.gitlab.merge-request-link',
+  'application/vnd.gitea.pull-request-link',
+]);
+
 const LINEAR_ISSUE_LINK_MIME = 'application/vnd.openchamber.linear-issue-link';
 
-type IssueLinkKind = 'github-issue' | 'github-pr' | 'linear-issue';
+type ForgeLinkInfo = { kind: 'issue' | 'pr'; provider: 'github' | 'gitlab' | 'gitea' } | null;
 
-const getIssueLinkKind = (file: FilePart): IssueLinkKind | null => {
-  if (file.mime === GITHUB_ISSUE_LINK_MIME) {
-    return 'github-issue';
+const getForgeLinkInfo = (file: FilePart): ForgeLinkInfo => {
+  const mime = file.mime;
+  if (!mime || !FORGE_LINK_MIMES.has(mime)) return null;
+
+  if (ISSUE_LINK_MIMES.has(mime)) {
+    if (mime.includes('gitlab')) return { kind: 'issue', provider: 'gitlab' };
+    if (mime.includes('gitea')) return { kind: 'issue', provider: 'gitea' };
+    return { kind: 'issue', provider: 'github' };
   }
-  if (file.mime === GITHUB_PR_LINK_MIME) {
-    return 'github-pr';
+
+  if (PR_LINK_MIMES.has(mime)) {
+    if (mime.includes('gitlab')) return { kind: 'pr', provider: 'gitlab' };
+    if (mime.includes('gitea')) return { kind: 'pr', provider: 'gitea' };
+    return { kind: 'pr', provider: 'github' };
   }
-  if (file.mime === LINEAR_ISSUE_LINK_MIME) {
-    return 'linear-issue';
-  }
+
   return null;
 };
 
-const issueLinkIcon = (kind: IssueLinkKind): 'github' | 'git-pull-request' | 'linear' => {
-  if (kind === 'github-pr') return 'git-pull-request';
-  if (kind === 'linear-issue') return 'linear';
+const isLinearLink = (file: FilePart): boolean => file.mime === LINEAR_ISSUE_LINK_MIME;
+
+type LinkInfo = ForgeLinkInfo | { kind: 'linear-issue' } | null;
+
+const getLinkInfo = (file: FilePart): LinkInfo => {
+  const forge = getForgeLinkInfo(file);
+  if (forge) return forge;
+  if (isLinearLink(file)) return { kind: 'linear-issue' };
+  return null;
+};
+
+const linkIconName = (info: LinkInfo): 'github' | 'gitlab' | 'git-branch' | 'git-pull-request' | 'linear' => {
+  if (!info) return 'github';
+  if (info.kind === 'pr') return 'git-pull-request';
+  if (info.kind === 'linear-issue') return 'linear';
+  if (info.provider === 'gitlab') return 'gitlab';
+  if (info.provider === 'gitea') return 'git-branch';
   return 'github';
 };
 
@@ -603,8 +642,8 @@ export const MessageFilesDisplay = memo(({ files, onShowPopup, compact = false }
   };
 
   const resolveDisplayName = React.useCallback((file: FilePart): string => {
-    const isGitHubLink = getIssueLinkKind(file) !== null;
-    if (isGitHubLink && typeof file.filename === 'string' && file.filename.trim().length > 0) {
+    const isLink = getLinkInfo(file) !== null;
+    if (isLink && typeof file.filename === 'string' && file.filename.trim().length > 0) {
       return file.filename.trim();
     }
     return extractFilename(file.filename || file.url);
@@ -677,11 +716,11 @@ export const MessageFilesDisplay = memo(({ files, onShowPopup, compact = false }
               const fileName = resolveDisplayName(file);
               const ext = fileName.split('.').pop() || '';
               const sizeText = formatFileSize(file.size);
-              const issueLinkKind = getIssueLinkKind(file);
+              const linkInfo = getLinkInfo(file);
               return (
                 <Tooltip key={`file-${file.url || file.filename || index}`}>
                   <TooltipTrigger asChild>
-                    {issueLinkKind && file.url ? (
+                    {linkInfo && file.url ? (
                       <button
                         type="button"
                         onClick={() => {
@@ -689,7 +728,7 @@ export const MessageFilesDisplay = memo(({ files, onShowPopup, compact = false }
                         }}
                         className="inline-flex items-center bg-muted/30 border border-border/30 typography-meta gap-1 px-2 py-0.5 rounded-lg text-foreground hover:text-primary transition-colors"
                       >
-                        <Icon name={issueLinkIcon(issueLinkKind)} className="text-muted-foreground h-3.5 w-3.5" />
+                        <Icon name={linkIconName(linkInfo)} className="text-muted-foreground h-3.5 w-3.5" />
                         <div className="overflow-hidden max-w-[220px]">
                           <span className="truncate block" title={fileName}>{fileName}</span>
                         </div>
@@ -772,7 +811,7 @@ export const MessageFilesDisplay = memo(({ files, onShowPopup, compact = false }
         const fileName = resolveDisplayName(file);
         const isImage = file.mime?.startsWith('image/');
         const sizeText = formatFileSize(file.size);
-        const issueLinkKind = getIssueLinkKind(file);
+        const linkInfo = getLinkInfo(file);
 
         if (isImage && file.url) {
           return (
@@ -795,7 +834,7 @@ export const MessageFilesDisplay = memo(({ files, onShowPopup, compact = false }
           );
         }
 
-        if (issueLinkKind && file.url) {
+        if (linkInfo && file.url) {
           return (
             <Tooltip key={file.url || `${fileName}-${index}`}>
               <TooltipTrigger asChild>
@@ -810,7 +849,7 @@ export const MessageFilesDisplay = memo(({ files, onShowPopup, compact = false }
                   )}
                 >
                   <div className="flex-shrink-0">
-                    <Icon name={issueLinkIcon(issueLinkKind)} className={cn("text-muted-foreground", compact ? "h-3.5 w-3.5" : "h-4 w-4")} />
+                    <Icon name={linkIconName(linkInfo)} className={cn("text-muted-foreground", compact ? "h-3.5 w-3.5" : "h-4 w-4")} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-medium truncate">{fileName}</p>

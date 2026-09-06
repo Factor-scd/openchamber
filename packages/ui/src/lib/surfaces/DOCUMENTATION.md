@@ -27,11 +27,11 @@ edge (`components/layout/ContextPanelRail.tsx`) and rendered by
   configure button — `ContextRailSurfacesDialog`), drops the plan surface
   unless plan mode is enabled,
   drops the walkthrough on VS Code and below `WALKTHROUGH_MIN_WIDTH`, hides
-  Linear unless a workspace is connected, hides the pull-request surface
-  unless GitHub is connected (OAuth or `gh` CLI — signed in from Settings →
-  Integrations), and hides `has-content` surfaces
-  until a tab of their mode exists. Both consumers use it so the digit shown
-  on a rail badge always maps to the same surface the shortcut opens.
+  Linear unless a workspace is connected, hides `has-content` surfaces
+  until a tab of their mode exists, and drops the `pr` surface when the
+  repository is on a git provider other than GitHub, GitLab, or Gitea
+  (`gitProvider: 'other'`). Both consumers use it so the digit shown on a rail
+  badge always maps to the same surface the shortcut opens.
 
 ## Adding a surface
 

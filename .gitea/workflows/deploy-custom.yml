@@ -1,0 +1,37 @@
+name: deploy-custom
+on:
+  push:
+    branches: [custom]
+jobs:
+  deploy:
+    runs-on: linux-amd64
+    steps:
+      - name: Checkout
+        run: |
+          rm -rf $GITHUB_WORKSPACE/repo
+          mkdir -p $GITHUB_WORKSPACE/repo
+          git clone --depth 1 --branch custom gitea@giteassh.buzzbee.dev:Vibing/openchamber.git $GITHUB_WORKSPACE/repo
+      - name: Show revision
+        run: git -C $GITHUB_WORKSPACE/repo rev-parse --short HEAD
+      - name: Copy workspace to build dir
+        run: |
+          rm -rf /opt/app/deploy/custom-build
+          mkdir -p /opt/app/deploy/custom-build
+          tar -C $GITHUB_WORKSPACE/repo --exclude=.git -cf - . | tar -C /opt/app/deploy/custom-build -xf -
+      - name: Install dependencies
+        run: cd /opt/app/deploy/custom-build && bun install --frozen-lockfile
+      - name: Build web
+        run: cd /opt/app/deploy/custom-build && bun run build:web
+      - name: Verify dist
+        run: test -f /opt/app/deploy/custom-build/packages/web/dist/index.html
+      - name: Swap current symlink
+        run: ln -sfn /opt/app/deploy/custom-build /opt/app/deploy/current
+      - name: Restart service
+        run: sudo systemctl restart openchamber-custom
+
+      - name: Notify on successful deploy
+        run: |
+          SHA=$(git -C $GITHUB_WORKSPACE/repo rev-parse HEAD)
+          MSG=$(git -C $GITHUB_WORKSPACE/repo log -1 --format=%s)
+          AUTHOR=$(git -C $GITHUB_WORKSPACE/repo log -1 --format=%an)
+          /opt/app/.local/bin/openchamber-notify-deploy.sh "$SHA" "$MSG" "$AUTHOR"

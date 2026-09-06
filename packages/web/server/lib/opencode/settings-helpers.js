@@ -1,3 +1,4 @@
+import { sanitizeGitProviders } from '../git-providers/config.js';
 import { isAgentMemoryFeatureAvailable } from '../agent-memory/feature-flag.js';
 import {
   DEFAULT_INPUT_HISTORY_LIMIT,
@@ -509,6 +510,10 @@ export const createSettingsHelpers = (dependencies) => {
     if (typeof candidate.gitModelId === 'string') {
       const trimmed = candidate.gitModelId.trim();
       result.gitModelId = trimmed.length > 0 ? trimmed : undefined;
+    }
+    const gitProviders = sanitizeGitProviders(candidate.gitProviders);
+    if (gitProviders) {
+      result.gitProviders = gitProviders;
     }
     if (typeof candidate.pwaAppName === 'string') {
       result.pwaAppName = normalizePwaAppName(candidate.pwaAppName, undefined);

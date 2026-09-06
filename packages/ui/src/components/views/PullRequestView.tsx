@@ -14,9 +14,11 @@ import type { GitRemote } from '@/lib/api/types';
 import { useI18n } from '@/lib/i18n';
 import { ScrollShadow } from '@/components/ui/ScrollShadow';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
+import { SortableTabsStrip } from '@/components/ui/sortable-tabs-strip';
 import { PullRequestSection } from './git/PullRequestSection';
 import { NestedRepoResolutionStates } from './git/NestedRepoResolutionStates';
 import { NestedRepoPicker } from './git/NestedRepoPicker';
+import { GitHubIssuesSection } from './git/GitHubIssuesSection';
 import { deriveBaseBranch } from './git/baseBranch';
 
 const normalizePath = (value?: string | null): string =>
@@ -251,14 +253,23 @@ export const PullRequestView: React.FC = () => {
     worktreeMetadata?.createdFromBranch,
   ]);
 
+  // Local tab selection between the pull-request and issues surfaces. Not
+  // persisted: reopening the panel always lands on pull requests.
+  const [activeTab, setActiveTab] = React.useState<'pr' | 'issues'>('pr');
+
+  // Empty state for the pull-request surface: returned full-height when there
+  // is no effective directory, and shown inside the "Pull requests" tab when
+  // the current branch has not resolved (issues need no branch, PRs do).
+  const prEmptyState = (
+    <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+      <Icon name="git-pull-request" className="h-12 w-12 text-muted-foreground/50" />
+      <div className="typography-ui-header text-foreground">{t('gitView.pullRequest.title')}</div>
+      <div className="max-w-sm typography-micro text-muted-foreground">{t('gitView.pullRequest.createHint')}</div>
+    </div>
+  );
+
   if (!currentDirectory) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
-        <Icon name="git-pull-request" className="h-12 w-12 text-muted-foreground/50" />
-        <div className="typography-ui-header text-foreground">{t('gitView.pullRequest.title')}</div>
-        <div className="max-w-sm typography-micro text-muted-foreground">{t('gitView.pullRequest.createHint')}</div>
-      </div>
-    );
+    return prEmptyState;
   }
 
   // Non-repo root: surface nested-repository resolution while the operating
@@ -277,51 +288,64 @@ export const PullRequestView: React.FC = () => {
     );
   }
 
-  if (!currentBranch) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
-        <Icon name="git-pull-request" className="h-12 w-12 text-muted-foreground/50" />
-        <div className="typography-ui-header text-foreground">{t('gitView.pullRequest.title')}</div>
-        <div className="max-w-sm typography-micro text-muted-foreground">{t('gitView.pullRequest.createHint')}</div>
-      </div>
-    );
-  }
-
   // Repository switcher for non-repo roots with discovered nested
   // repositories; the pick is shared per root across git surfaces.
   const showRepositoryPicker =
     rootIsGitRepo === false && Array.isArray(nestedRepos) && nestedRepos.length > 0;
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      {showRepositoryPicker ? (
-        <div className="flex shrink-0 items-center border-b border-border/60 px-4 py-2">
-          <NestedRepoPicker
-            repositories={nestedRepos}
-            selectedRepository={gitDirectory ?? null}
-            onSelectRepository={(repository) => {
-              if (currentDirectory) selectNestedRepo(currentDirectory, repository);
-            }}
-            repositoryRoot={currentDirectory ?? undefined}
+    <ScrollableOverlay
+      as={ScrollShadow}
+      outerClassName="h-full min-h-0"
+      className="px-4 py-3"
+      disableHorizontal
+      preventOverscroll
+    >
+      <div className="flex h-full min-h-0 flex-col gap-4">
+        {showRepositoryPicker ? (
+          <div className="flex shrink-0 items-center border-b border-border/60 px-4 py-2">
+            <NestedRepoPicker
+              repositories={nestedRepos}
+              selectedRepository={gitDirectory ?? null}
+              onSelectRepository={(repository) => {
+                if (currentDirectory) selectNestedRepo(currentDirectory, repository);
+              }}
+              repositoryRoot={currentDirectory ?? undefined}
+            />
+          </div>
+        ) : null}
+        <div className="flex h-8 min-w-0">
+          <SortableTabsStrip
+            className="h-full"
+            items={[
+              { id: 'pr', label: t('gitView.pullRequest.tabs.pullRequests') },
+              { id: 'issues', label: t('gitView.pullRequest.tabs.issues') },
+            ]}
+            activeId={activeTab}
+            onSelect={(tabId) => setActiveTab(tabId as 'pr' | 'issues')}
+            layoutMode="fit"
+            variant="active-pill"
+            activePillButtonClassName="h-7"
           />
         </div>
-      ) : null}
-      <ScrollableOverlay
-        as={ScrollShadow}
-        outerClassName="h-full min-h-0 flex-1"
-        className="px-4 py-3"
-        disableHorizontal
-        preventOverscroll
-      >
-        <PullRequestSection
-          directory={gitDirectory ?? currentDirectory}
-          branch={currentBranch}
-          baseBranch={baseBranch}
-          trackingBranch={status?.tracking ?? undefined}
-          remotes={remotes}
-          remoteBranches={remoteBranches}
-        />
-      </ScrollableOverlay>
-    </div>
+
+        {activeTab === 'pr' ? (
+          currentBranch ? (
+            <PullRequestSection
+              directory={gitDirectory ?? currentDirectory}
+              branch={currentBranch}
+              baseBranch={baseBranch}
+              trackingBranch={status?.tracking ?? undefined}
+              remotes={remotes}
+              remoteBranches={remoteBranches}
+            />
+          ) : (
+            <div className="flex min-h-0 flex-1 flex-col">{prEmptyState}</div>
+          )
+        ) : (
+          <GitHubIssuesSection directory={currentDirectory} />
+        )}
+      </div>
+    </ScrollableOverlay>
   );
 };

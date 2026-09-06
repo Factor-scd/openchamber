@@ -206,10 +206,13 @@ type VisibleRailSurfacesOptions = {
   tabs: readonly { mode: ContextPanelMode }[];
   /** Linear's rail icon stays off until a workspace is connected. */
   linearConnected: boolean;
-  /** The pull-request rail icon stays off until GitHub is connected (OAuth
-      or a detected `gh` CLI login). GitHub is connected from Settings, so
-      hiding the surface removes no entry point. */
-  githubConnected: boolean;
+  /**
+   * The repository's git provider. The 'pr' surface renders the GitHub pull
+   * request / GitLab merge request / Gitea pull request view; it is hidden for
+   * repositories on any other provider. null (unknown, still resolving) keeps
+   * it visible.
+   */
+  gitProvider?: 'github' | 'gitlab' | 'gitea' | 'other' | null;
 };
 
 /**
@@ -228,6 +231,13 @@ export const getVisibleContextRailSurfaces = (options: VisibleRailSurfacesOption
     if (surface.id === 'plan' && !options.planModeEnabled) {
       return false;
     }
+    // The 'pr' surface hosts the GitHub PR / GitLab MR view. Neither applies
+    // to repositories on other providers, so the rail button (and its shortcut
+    // digit) must not appear. Unknown (null) keeps it while the provider is
+    // still resolving — it is not a reason to hide the surface.
+    if (surface.id === 'pr' && options.gitProvider === 'other') {
+      return false;
+    }
     // The walkthrough needs room for a stop list beside real code, and its
     // diffs come from OpenChamber's Git routes, which VS Code does not serve.
     if (surface.id === 'walkthrough' && (options.isVSCode || options.screenWidth < WALKTHROUGH_MIN_WIDTH)) {
@@ -242,9 +252,6 @@ export const getVisibleContextRailSurfaces = (options: VisibleRailSurfacesOption
       return false;
     }
     if (surface.id === 'linear' && !options.linearConnected) {
-      return false;
-    }
-    if (surface.id === 'pr' && !options.githubConnected) {
       return false;
     }
     if (surface.availability === 'has-content') {

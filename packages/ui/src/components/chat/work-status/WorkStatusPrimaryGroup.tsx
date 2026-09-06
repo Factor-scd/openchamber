@@ -6,6 +6,9 @@ import { useNestedGitDirectory } from '@/hooks/useNestedGitDirectory';
 import { useWorktreeBootstrapPending } from '@/hooks/useWorktreeBootstrapPending';
 import { runBackgroundNetworkTask } from '@/lib/background-network';
 import { useFreshestPrVisualSummaryForBranch } from '@/stores/useGitHubPrStatusStore';
+import { useGitLabMrForBranch } from '@/lib/gitlabMrStatus';
+import { useGiteaPrForBranch } from '@/lib/giteaPrStatus';
+import { useGitProvider } from '@/lib/gitProvider';
 import { useSessionMessages } from '@/sync/sync-context';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useUIStore } from '@/stores/useUIStore';
@@ -123,8 +126,6 @@ export const WorkStatusPrimaryGroup: React.FC<Props> = ({ sessionId, directory, 
     });
   }, [clearDiffCache, gitDirectory, fetchStatus, git, showRepository]);
 
-  const branch = gitStatus?.current?.trim() || null;
-
   // Which repository under the project the branch belongs to. Only meaningful
   // when the readouts come from a nested repository; for a project that is a
   // repository itself the section header already names it.
@@ -133,6 +134,8 @@ export const WorkStatusPrimaryGroup: React.FC<Props> = ({ sessionId, directory, 
     const rootPrefix = `${directory}/`;
     return gitDirectory.startsWith(rootPrefix) ? gitDirectory.slice(rootPrefix.length) : gitDirectory;
   }, [directory, gitDirectory]);
+
+  const branch = gitStatus?.current?.trim() || null;
 
   const availableWorktreesByProject = useSessionUIStore((state) => state.availableWorktreesByProject);
   // Worktrees normally sit beside rather than beneath their project directory,
@@ -156,6 +159,13 @@ export const WorkStatusPrimaryGroup: React.FC<Props> = ({ sessionId, directory, 
   // here would multiply GitHub requests per open session, which is exactly the
   // fan-out the PR-status concurrency gate exists to prevent.
   const prSummary = useFreshestPrVisualSummaryForBranch(gitDirectory, branch);
+
+  // GitLab merge requests and Gitea pull requests ride the same shared TTL
+  // cache as the git view and the walkthrough, so every surface that reports
+  // the branch's request stays consistent without extra requests.
+  const gitProvider = useGitProvider(gitDirectory);
+  const { mr: gitLabMr } = useGitLabMrForBranch(gitDirectory, branch);
+  const { pr: giteaPr } = useGiteaPrForBranch(gitDirectory, branch);
 
   // `getCurrentModel` is an imperative getter: its reference never changes, so
   // calling it in render subscribes to nothing. Subscribe to the selected model
@@ -255,7 +265,28 @@ export const WorkStatusPrimaryGroup: React.FC<Props> = ({ sessionId, directory, 
   // restate the number directly above it.
   const showCostBreakdown = cost !== null && subagentCount > 0 && subagentCost > 0;
   const hasSession = showSession && (usagePercent !== null || cost !== null || Boolean(goalRow));
-  const hasRepository = showRepository && Boolean(branch || changed || prSummary || attentionLabel);
+
+  const hasGitLabMr = gitProvider === 'gitlab' && gitLabMr !== null;
+  const hasGiteaPr = gitProvider === 'gitea' && giteaPr !== null;
+  const gitLabMrVisualState = gitLabMr
+    ? gitLabMr.state === 'merged'
+      ? 'merged'
+      : gitLabMr.state === 'closed'
+        ? 'closed'
+        : gitLabMr.draft
+          ? 'draft'
+          : 'open'
+    : null;
+  const giteaPrVisualState = giteaPr
+    ? giteaPr.state === 'merged'
+      ? 'merged'
+      : giteaPr.state === 'closed'
+        ? 'closed'
+        : giteaPr.draft
+          ? 'draft'
+          : 'open'
+    : null;
+  const hasRepository = showRepository && Boolean(branch || changed || prSummary || attentionLabel || hasGitLabMr || hasGiteaPr);
 
   useReportWorkStatusPresence('session-repository', hasSession || hasRepository);
 
@@ -356,6 +387,42 @@ export const WorkStatusPrimaryGroup: React.FC<Props> = ({ sessionId, directory, 
                   <WorkStatusValue tone="error">{`−${changed.deletions}`}</WorkStatusValue>
                 </>
               ) : undefined}
+            />
+          ) : null}
+
+          {hasGitLabMr && gitLabMr ? (
+            <WorkStatusRow
+              icon="gitlab"
+              onClick={directory ? () => openSurface('pr') : undefined}
+              ariaLabel={t('chat.workStatus.action.openMr')}
+              iconColor={`var(--pr-${gitLabMrVisualState})`}
+              label={gitLabMr.title || t('chat.workStatus.mr.untitled')}
+              value={(
+                <WorkStatusPill
+                  color={`var(--pr-${gitLabMrVisualState})`}
+                  background={`color-mix(in srgb, var(--pr-${gitLabMrVisualState}) 18%, transparent)`}
+                >
+                  {gitLabMr.draft ? t('chat.workStatus.pr.draft') : `!${gitLabMr.number}`}
+                </WorkStatusPill>
+              )}
+            />
+          ) : null}
+
+          {hasGiteaPr && giteaPr ? (
+            <WorkStatusRow
+              icon="gitea"
+              onClick={directory ? () => openSurface('pr') : undefined}
+              ariaLabel={t('chat.workStatus.action.openPr')}
+              iconColor={`var(--pr-${giteaPrVisualState})`}
+              label={giteaPr.title || t('chat.workStatus.pr.untitled')}
+              value={(
+                <WorkStatusPill
+                  color={`var(--pr-${giteaPrVisualState})`}
+                  background={`color-mix(in srgb, var(--pr-${giteaPrVisualState}) 18%, transparent)`}
+                >
+                  {giteaPr.draft ? t('chat.workStatus.pr.draft') : `#${giteaPr.number}`}
+                </WorkStatusPill>
+              )}
             />
           ) : null}
 

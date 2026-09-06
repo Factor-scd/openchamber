@@ -18,6 +18,7 @@ import { SessionGoalRow } from '@/components/chat/SessionGoalRow';
 import { SessionSuggestionChip } from '@/components/chat/SessionSuggestionChip';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
+import { useGitProvider } from '@/lib/gitProvider';
 import type { Theme } from '@/types/theme';
 import { ComposerAttachmentControls } from './ComposerAttachmentControls';
 
@@ -82,6 +83,8 @@ export function MobilePillComposer(props: MobilePillComposerProps) {
     const canPrimaryAction = hasContent && Boolean(currentSessionId || newSessionDraftOpen);
     const showTrailingSendAction = canPrimaryAction && canAbort;
 
+    const gitProvider = useGitProvider(directory);
+
     return (
         <div className="flex flex-col">
         <SessionGoalRow
@@ -109,6 +112,7 @@ export function MobilePillComposer(props: MobilePillComposerProps) {
                     handlePickLocalFiles={onPickLocalFiles}
                     openIssuePicker={onOpenIssuePicker}
                     openPrPicker={onOpenPrPicker}
+                    gitProvider={gitProvider}
                     showLinearPicker={showLinearPicker}
                     openLinearPicker={onOpenLinearPicker}
                     onOpenMobileSheet={onOpenAttachSheet}

@@ -16,6 +16,8 @@ import { createWebToolsAPI } from './tools';
 import { createWebPushAPI } from './push';
 import { createWebGitHubAPI } from './github';
 import { createWebLinearAPI } from './linear';
+import { createWebGitLabAPI } from './gitlab';
+import { createWebGiteaAPI } from './gitea';
 import { createWebClientAuthAPI } from './clientAuth';
 
 export interface WebAPIsOptions {
@@ -47,6 +49,8 @@ export const createWebAPIs = (options: WebAPIsOptions = {}): RuntimeAPIs => {
   notifications: createWebNotificationsAPI(),
   github: createWebGitHubAPI({ urls: activeUrls }),
   linear: createWebLinearAPI(),
+  gitlab: createWebGitLabAPI({ urls: activeUrls }),
+  gitea: createWebGiteaAPI({ urls: activeUrls }),
   push: createWebPushAPI(),
   clientAuth: createWebClientAuthAPI(),
   tools: createWebToolsAPI(),
