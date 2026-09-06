@@ -18,6 +18,7 @@ import { useAgentMemoryStore } from '@/stores/useAgentMemoryStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { resolveProjectContextId } from '@/lib/projectContextApi';
+import { useConfigStore } from '@/stores/useConfigStore';
 import { WorkStatusCollapsibleSection, WorkStatusPill, WorkStatusRow, WorkStatusValue } from './WorkStatusPrimitives';
 import { useReportWorkStatusPresence } from './presenceContext';
 import { WorkStatusLinkDialog } from './WorkStatusLinkDialog';
@@ -202,9 +203,15 @@ export const WorkStatusContextSection: React.FC<Props> = ({ sessionId, directory
   // here: `loadSkills` already gates its own fetch, and wrapping it again
   // would hold a second slot idle for the length of the first.
   const loadSkills = useSkillsStore((state) => state.loadSkills);
+  // `isConnected` is a dependency, not a gate: skills are discovered on the
+  // connected instance and their caches are dropped when instances switch, so
+  // the count has to be asked for again once the new instance is up. Two
+  // instances can hold the same project path, which leaves `directory`
+  // unchanged across a switch.
+  const isConnected = useConfigStore((state) => state.isConnected);
   React.useEffect(() => {
     void loadSkills();
-  }, [directory, loadSkills]);
+  }, [directory, isConnected, loadSkills]);
 
   /**
    * What this session carries. Read from the server

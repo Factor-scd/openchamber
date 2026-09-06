@@ -37,8 +37,8 @@ import * as sessionActions from '@/sync/session-actions';
 import { buildLinkedIssue, buildLinkedLinearIssue } from '@/lib/linkedIssues';
 import { useGitProvider } from '@/lib/gitProvider';
 import { useConfigStore } from '@/stores/useConfigStore';
-import { validateWorktreeCreate, createWorktree } from '@/lib/worktrees/worktreeManager';
-import { withWorktreeUpstreamDefaults } from '@/lib/worktrees/worktreeCreate';
+import { validateWorktreeCreate } from '@/lib/worktrees/worktreeManager';
+import { createWorktreeWithDefaults } from '@/lib/worktrees/worktreeCreate';
 import { waitForWorktreeBootstrap } from '@/lib/worktrees/worktreeBootstrap';
 import { getWorktreeSetupCommands, getWorktreeSetupWaitEnabled } from '@/lib/openchamberConfig';
 import { getRootBranch } from '@/lib/worktrees/worktreeStatus';
@@ -54,7 +54,7 @@ import {
 } from '@/lib/worktrees/worktreeSourceBranchPreference';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useGitBranches, useGitStore, useGitLoadingBranches } from '@/stores/useGitStore';
-import { GitHubIntegrationDialog } from './GitHubIntegrationDialog';
+import { GitHubIntegrationDialog, type GitHubWorktreeSelection } from './GitHubIntegrationDialog';
 import { GitLabIntegrationDialog } from './GitLabIntegrationDialog';
 import { GiteaIntegrationDialog } from './GiteaIntegrationDialog';
 import { LinearIssuePickerDialog } from './LinearIssuePickerDialog';
@@ -78,7 +78,7 @@ import type {
   LinearIssue,
   LinearIssueComment,
 } from '@/lib/api/types';
-import type { ProjectRef } from '@/lib/worktrees/worktreeManager';
+import type { CreateWorktreeArgs, ProjectRef } from '@/lib/worktrees/worktreeManager';
 import { useI18n } from '@/lib/i18n';
 
 type Mode = 'new-branch' | 'existing-branch';
@@ -539,6 +539,7 @@ export function NewWorktreeDialog({
   // Creation state
   const [isCreating, setIsCreating] = React.useState(false);
   const [validationAbortController, setValidationAbortController] = React.useState<AbortController | null>(null);
+  const initializedForCurrentOpen = React.useRef(false);
 
   const resolveDefaultAgentName = React.useCallback((): string | undefined => {
     const configState = useConfigStore.getState();
@@ -576,9 +577,7 @@ export function NewWorktreeDialog({
       : undefined;
 
     const provider = configState.providers.find((p) => p.id === providerID);
-    const model = provider?.models.find((m: Record<string, unknown>) => (m as { id?: string }).id === modelID) as
-      | { variants?: Record<string, unknown> }
-      | undefined;
+    const model = provider?.models.find((m) => m.id === modelID);
     const variants = model?.variants;
     if (!variants) return settingsDefaultVariant || currentVariant || undefined;
     if (settingsDefaultVariant && Object.prototype.hasOwnProperty.call(variants, settingsDefaultVariant)) return settingsDefaultVariant;
@@ -1086,7 +1085,12 @@ export function NewWorktreeDialog({
   // Reset state on each open. Resetting on close would empty the form during
   // the close animation, causing visible flicker.
   React.useLayoutEffect(() => {
-    if (!open) return;
+    if (!open) {
+      initializedForCurrentOpen.current = false;
+      return;
+    }
+    if (initializedForCurrentOpen.current) return;
+    initializedForCurrentOpen.current = true;
 
     setMode('new-branch');
     setExistingBranchState({
@@ -1302,13 +1306,13 @@ export function NewWorktreeDialog({
       const sourceBranch = newBranchState.sourceBranch;
 
       let sourceLabel = '';
-      const args = (() => {
+      const args: CreateWorktreeArgs = (() => {
         if (linkedPr) {
           const prConfig = resolvePrWorktreeConfig(linkedPr, localBranches, remoteBranches);
           sourceLabel = prConfig.sourceLabel;
-          return {
+          const prArgs: CreateWorktreeArgs = {
             preferredName: normalizedBranch || normalizedWorktree,
-            mode: 'existing' as const,
+            mode: 'existing',
             branchName: normalizedBranch,
             worktreeName: normalizedWorktree,
             existingBranch: prConfig.existingBranch,
@@ -1317,9 +1321,10 @@ export function NewWorktreeDialog({
             upstreamRemote: prConfig.upstreamRemote,
             upstreamBranch: prConfig.upstreamBranch,
             returnAfterDirectoryCreated: true,
-            ...(prConfig.ensureRemoteName ? { ensureRemoteName: prConfig.ensureRemoteName } : {}),
-            ...(prConfig.ensureRemoteUrl ? { ensureRemoteUrl: prConfig.ensureRemoteUrl } : {}),
           };
+          if (prConfig.ensureRemoteName) prArgs.ensureRemoteName = prConfig.ensureRemoteName;
+          if (prConfig.ensureRemoteUrl) prArgs.ensureRemoteUrl = prConfig.ensureRemoteUrl;
+          return prArgs;
         }
 
         if (linkedGitLabMr) {
@@ -1357,21 +1362,20 @@ export function NewWorktreeDialog({
         }
 
         sourceLabel = mode === 'new-branch' ? sourceBranch : '';
-        return {
+        const baseArgs: CreateWorktreeArgs = {
           preferredName: normalizedBranch || normalizedWorktree,
-          mode: mode === 'existing-branch' ? 'existing' as const : 'new' as const,
+          mode: mode === 'existing-branch' ? 'existing' : 'new',
           branchName: mode === 'existing-branch' ? undefined : normalizedBranch,
           worktreeName: normalizedWorktree,
           existingBranch: mode === 'existing-branch' ? normalizedBranch : undefined,
           setupCommands,
           returnAfterDirectoryCreated: true,
-          ...(sourceBranch && mode === 'new-branch' ? { startRef: sourceBranch } : {}),
         };
+        if (sourceBranch && mode === 'new-branch') baseArgs.startRef = sourceBranch;
+        return baseArgs;
       })();
 
-      const resolvedArgs = await withWorktreeUpstreamDefaults(projectDirectory, args);
-
-      const metadata = await createWorktree(projectRef, resolvedArgs);
+      const metadata = await createWorktreeWithDefaults(projectRef, args);
 
       let createdSessionId: string | null = null;
 
@@ -1481,11 +1485,7 @@ export function NewWorktreeDialog({
   };
 
   // Handle GitHub selection
-  const handleGitHubSelect = (result: {
-    type: 'issue' | 'pr';
-    item: GitHubIssue | GitHubPullRequestSummary;
-    includeDiff?: boolean;
-  } | null) => {
+  const handleGitHubSelect = (result: GitHubWorktreeSelection | null) => {
     if (!result) {
       setNewBranchState(prev => ({
         ...prev,
@@ -1504,7 +1504,7 @@ export function NewWorktreeDialog({
     }
 
     if (result.type === 'issue') {
-      const issue = result.item as GitHubIssue;
+      const issue = result.item;
       const newBranchName = `issue-${issue.number}-${generateBranchSlug()}`;
       setNewBranchState(prev => ({
         ...prev,
@@ -1522,7 +1522,7 @@ export function NewWorktreeDialog({
         isSyncingWorktreeName: true,
       }));
     } else if (result.type === 'pr') {
-      const pr = result.item as GitHubPullRequestSummary;
+      const pr = result.item;
       setNewBranchState(prev => ({
         ...prev,
         linkedPr: pr,
@@ -1788,7 +1788,11 @@ export function NewWorktreeDialog({
                 { id: 'existing-branch', label: t('session.newWorktree.mode.existingBranch'), icon: <Icon name="git-repository" className="h-3.5 w-3.5" /> },
               ]}
               activeId={mode}
-              onSelect={(id) => handleModeChange(id as Mode)}
+              onSelect={(id) => {
+                if (id === 'new-branch' || id === 'existing-branch') {
+                  handleModeChange(id);
+                }
+              }}
               variant="active-pill"
               layoutMode="fit"
               className="w-full"
@@ -2393,7 +2397,11 @@ export function NewWorktreeDialog({
                       { id: 'existing-branch', label: t('session.newWorktree.mode.existingBranch'), icon: <Icon name="git-repository" className="h-3.5 w-3.5" /> },
                     ]}
                     activeId={mode}
-                    onSelect={(id) => handleModeChange(id as Mode)}
+                    onSelect={(id) => {
+                if (id === 'new-branch' || id === 'existing-branch') {
+                  handleModeChange(id);
+                }
+              }}
                     variant="active-pill"
                     layoutMode="fit"
                     className="w-full"

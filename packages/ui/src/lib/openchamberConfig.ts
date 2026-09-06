@@ -52,6 +52,7 @@ export interface OpenChamberProjectAction {
   name: string;
   command: string;
   icon?: string | null;
+  runIn?: 'parent';
   platforms?: OpenChamberProjectActionPlatform[];
   autoOpenUrl?: boolean;
   openUrl?: string;
@@ -282,6 +283,7 @@ const sanitizeProjectActions = (value: unknown): OpenChamberProjectAction[] => {
       name?: unknown;
       command?: unknown;
       icon?: unknown;
+      runIn?: unknown;
       platforms?: unknown;
       autoOpenUrl?: unknown;
       openUrl?: unknown;
@@ -298,6 +300,7 @@ const sanitizeProjectActions = (value: unknown): OpenChamberProjectAction[] => {
     seenIds.add(id);
 
     const iconRaw = typeof record.icon === 'string' ? record.icon.trim() : '';
+    const runIn = record.runIn === 'parent' ? 'parent' : undefined;
     const platforms = sanitizeProjectActionPlatforms(record.platforms);
     const autoOpenUrl = record.autoOpenUrl === true;
     const openUrlRaw = typeof record.openUrl === 'string' ? record.openUrl.trim() : '';
@@ -310,7 +313,7 @@ const sanitizeProjectActions = (value: unknown): OpenChamberProjectAction[] => {
       OPENCHAMBER_PROJECT_ACTION_DESKTOP_FORWARD_MAX_LENGTH
     );
 
-    sanitized.push({
+    const sanitizedAction: OpenChamberProjectAction = {
       id,
       name,
       command,
@@ -319,7 +322,11 @@ const sanitizeProjectActions = (value: unknown): OpenChamberProjectAction[] => {
       ...(openUrl ? { openUrl } : {}),
       ...(desktopOpenSshForward ? { desktopOpenSshForward } : {}),
       ...(platforms.length > 0 ? { platforms } : {}),
-    });
+    };
+    if (runIn) {
+      sanitizedAction.runIn = runIn;
+    }
+    sanitized.push(sanitizedAction);
   }
 
   return sanitized;
