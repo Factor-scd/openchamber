@@ -63,17 +63,16 @@ const runWhenDocumentCanRegisterServiceWorker = (task: () => void): void => {
 };
 
 const registerPwaServiceWorker = (): void => {
-  runWhenDocumentCanRegisterServiceWorker(() => {
-    try {
-      registerSW({
-        onRegisterError(error: unknown) {
-          console.warn('[PWA] service worker registration skipped:', error);
-        },
-      });
-    } catch (error) {
-      console.warn('[PWA] service worker registration skipped:', error);
-    }
-  });
+  if (!canUseServiceWorker()) return;
+  try {
+    registerSW({
+      onRegisterError(error: unknown) {
+        console.warn('[PWA] service worker registration skipped:', error);
+      },
+    });
+  } catch (error) {
+    console.warn('[PWA] service worker registration skipped:', error);
+  }
 };
 
 const unregisterDevelopmentServiceWorkers = (): void => {

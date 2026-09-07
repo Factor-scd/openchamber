@@ -66,6 +66,13 @@ describe('PWA manifest route', () => {
       expect(fetchCalls).toHaveLength(2);
       expect(manifest.shortcuts).toEqual([
         {
+          name: 'New Session',
+          short_name: 'New',
+          description: 'Start a new coding session',
+          url: '/',
+          icons: [{ src: '/pwa-192.png', sizes: '192x192', type: 'image/png' }],
+        },
+        {
           name: 'Appearance Settings',
           short_name: 'Settings',
           description: 'Open appearance settings',

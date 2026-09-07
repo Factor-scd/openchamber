@@ -716,7 +716,7 @@
   }
 
   :root:not(.oc-capacitor-app):not(.oc-browser-keyboard-open) .oc-mobile-composer {
-    padding-bottom: calc(0.75rem + max(16px, var(--oc-safe-area-bottom, env(safe-area-inset-bottom, 0px)))) !important;
+    padding-bottom: calc(0.75rem + var(--oc-safe-area-bottom-visual, 0px)) !important;
   }
 
   /* Fullscreen composer: ChatInput pins the form to the visual viewport from

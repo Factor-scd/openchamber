@@ -73,10 +73,10 @@ export default defineConfig({
       injectRegister: false,
       manifest: false,
       injectManifest: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,ttf,otf,eot}'],
-        // iOS Safari/PWA is much more reliable with a classic (non-module) SW bundle.
+        // No precache — the SW has no fetch handler. Only the IIFE bundle
+        // is produced so vite-plugin-pwa can build the registration script.
+        globPatterns: [],
         rollupFormat: 'iife',
-        // We already keep a custom manifest in index.html
         injectionPoint: undefined,
       },
       devOptions: {
