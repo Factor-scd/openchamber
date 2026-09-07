@@ -7,6 +7,7 @@ const isAllowedSsePath = (pathname) => {
   return pathname === '/api/event'
     || pathname === '/api/global/event'
     || pathname === '/api/openchamber/events'
+    || pathname === '/api/openchamber/agent-activity'
     || pathname === '/api/notifications/stream';
 };
 

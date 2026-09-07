@@ -92,6 +92,9 @@ import { createApnsRuntime } from './lib/notifications/apns-runtime.js';
 import { createNotificationTemplateRuntime } from './lib/notifications/template-runtime.js';
 import { createPermissionAutoAcceptRuntime } from './lib/permission-auto-accept/runtime.js';
 import { createMessageQueueRuntime } from './lib/message-queue/runtime.js';
+import { createAgentActivityRuntime, registerAgentActivityRoutes } from './lib/agent-activity/runtime.js';
+import { createSessionSteerRuntime, registerSessionSteerRoutes } from './lib/session-steer/runtime.js';
+import { createPlanGateRuntime, registerPlanGateRoutes } from './lib/plan-gate/runtime.js';
 import { createGracefulShutdownRuntime } from './lib/opencode/shutdown-runtime.js';
 import { createProjectConfigRuntime } from './lib/projects/project-config.js';
 import { createProjectContextRuntime } from './lib/project-context/runtime.js';
@@ -167,6 +170,7 @@ const SSE_PATH_PREFIXES = [
   '/api/notifications/stream',
   '/api/openchamber/events',
   '/api/openchamber/realtime-proxy/sse',
+  '/api/openchamber/agent-activity',
 ];
 
 function shouldSkipCompression(req, res) {
@@ -898,6 +902,28 @@ const messageQueueRuntime = createMessageQueueRuntime({
   dataDir: OPENCHAMBER_DATA_DIR,
 });
 messageQueueRuntime.start();
+
+const agentActivityRuntime = createAgentActivityRuntime({
+  globalEventHub: globalMessageStreamHub,
+  broadcastGlobalUiEvent,
+});
+agentActivityRuntime.start();
+
+const sessionSteerRuntime = createSessionSteerRuntime({
+  globalEventHub: globalMessageStreamHub,
+  buildOpenCodeUrl,
+  getOpenCodeAuthHeaders,
+  broadcastGlobalUiEvent,
+});
+sessionSteerRuntime.start();
+
+const planGateRuntime = createPlanGateRuntime({
+  globalEventHub: globalMessageStreamHub,
+  buildOpenCodeUrl,
+  getOpenCodeAuthHeaders,
+  broadcastGlobalUiEvent,
+});
+planGateRuntime.start();
 
 const openCodeWatcherRuntime = createOpenCodeWatcherRuntime({
   waitForOpenCodePort: (...args) => waitForOpenCodePort(...args),
@@ -1947,6 +1973,9 @@ async function main(options = {}) {
     writeSseEvent,
     permissionAutoAcceptRuntime,
     messageQueueRuntime,
+    agentActivityRuntime,
+    sessionSteerRuntime,
+    planGateRuntime,
   });
 
   const startupPipelineResult = await startupPipelineRuntime.run({

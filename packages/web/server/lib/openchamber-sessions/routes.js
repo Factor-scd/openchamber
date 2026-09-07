@@ -196,7 +196,7 @@ const runPromptAsync = async ({ baseUrl, authHeaders, sessionID, directory, payl
   }
 };
 
-const createSession = async ({ baseUrl, authHeaders, directory, title, agent, model, variant }) => {
+const createSession = async ({ baseUrl, authHeaders, directory, title, agent, model, variant, cardID }) => {
   const sessionUrl = new URL(`${baseUrl}/session`);
   sessionUrl.searchParams.set('directory', directory);
   const response = await fetch(sessionUrl.toString(), {
@@ -226,6 +226,21 @@ const createSession = async ({ baseUrl, authHeaders, directory, title, agent, mo
   if (!sessionID) {
     throw new Error('failed to create session');
   }
+
+  if (cardID) {
+    const patchUrl = new URL(`${baseUrl}/session/${encodeURIComponent(sessionID)}`);
+    patchUrl.searchParams.set('directory', directory);
+    await fetch(patchUrl.toString(), {
+      method: 'PATCH',
+      headers: {
+        ...authHeaders,
+        'content-type': 'application/json',
+        accept: 'application/json',
+      },
+      body: JSON.stringify({ metadata: { openchamber: { cardID } } }),
+    }).catch(() => {});
+  }
+
   return sessionID;
 };
 
@@ -476,6 +491,7 @@ export const createOpenChamberSessionService = (dependencies) => {
     directory,
     prompt,
     goalInput,
+    planGate = false,
     requestedModel,
     requestedAgent,
     requestedVariant,
@@ -587,6 +603,9 @@ export const createOpenChamberSessionService = (dependencies) => {
               ...(goalInput.enabled
                 ? [{ type: 'text', text: buildGoalIntroText(goalInput.tokenBudget), synthetic: true }]
                 : []),
+              ...(planGate
+                ? [{ type: 'text', text: '<system-reminder>\nPlan gate is active. Before editing any files, output your implementation plan as a markdown block starting with `## Plan`. Then STOP and wait for approval. Do not read files beyond what you need to write the plan.\n</system-reminder>', synthetic: true }]
+                : []),
             ],
           },
         });
@@ -680,6 +699,8 @@ export const createOpenChamberSessionService = (dependencies) => {
   const create = async (payload = {}) => {
     const title = asNonEmptyString(payload.title);
     const prompt = asNonEmptyString(payload.prompt);
+    const cardID = asNonEmptyString(payload.cardID);
+    const planGate = payload.planGate === true;
     const goalInput = resolveGoalInput(payload, prompt);
     if (!goalInput.ok) {
       throw new OpenChamberControlError(goalInput.error, 400);
@@ -734,6 +755,7 @@ export const createOpenChamberSessionService = (dependencies) => {
       ...(agent ? { agent } : {}),
       ...(model ? { model } : {}),
       ...(variant ? { variant } : {}),
+      ...(cardID ? { cardID } : {}),
     });
 
     let dispatch = { model, agent, variant, promptDispatched: false, dispatchedAsCommand: false };
@@ -746,6 +768,7 @@ export const createOpenChamberSessionService = (dependencies) => {
         directory: sessionDirectory,
         prompt,
         goalInput,
+        planGate,
         requestedModel: model,
         requestedAgent: agent,
         requestedVariant: variant,
@@ -766,6 +789,8 @@ export const createOpenChamberSessionService = (dependencies) => {
       dispatchedAsCommand: dispatch.dispatchedAsCommand,
       ...(goalInput.enabled ? { goalEnabled: true } : {}),
       ...(goalInput.tokenBudget ? { goalTokenBudget: goalInput.tokenBudget } : {}),
+      ...(cardID ? { cardID } : {}),
+      ...(planGate ? { planGate: true } : {}),
     };
 
     try {
@@ -782,6 +807,8 @@ export const createOpenChamberSessionService = (dependencies) => {
         dispatchedAsCommand: dispatch.dispatchedAsCommand,
         ...(goalInput.enabled ? { goalEnabled: true } : {}),
         ...(goalInput.tokenBudget ? { goalTokenBudget: goalInput.tokenBudget } : {}),
+        ...(cardID ? { cardID } : {}),
+        ...(planGate ? { planGate: true } : {}),
         createdAt: Date.now(),
       });
     } catch {
