@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createSessionSteerRuntime } from './runtime.js';
+import express from 'express';
+import request from 'supertest';
+import { createSessionSteerRuntime, registerSessionSteerRoutes } from './runtime.js';
 
 const SESSION = 'ses_steer_test_1';
 const DIRECTORY = '/repo';
@@ -149,5 +151,43 @@ describe('session-steer runtime', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 200));
     expect(openCode.state.sent.length).toBe(0);
+  });
+});
+
+describe('session-steer route middleware', () => {
+  it('parses JSON body without global middleware on steer route', async () => {
+    const { state, fetchImpl } = createOpenCode();
+    state.statuses[SESSION] = { type: 'idle' };
+    state.tail = [{ info: { role: 'user', id: 'msg_1', time: { created: 100 } } }];
+    const runtime = createSessionSteerRuntime({
+      globalEventHub: { subscribeEvent() { return () => {}; } },
+      buildOpenCodeUrl: (fetchPath) => `http://opencode.test${fetchPath}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      broadcastGlobalUiEvent: () => {},
+      fetchImpl,
+    });
+    const app = express();
+    registerSessionSteerRoutes(app, runtime);
+    const res = await request(app)
+      .post(`/api/openchamber/session/${SESSION}/steer`)
+      .send({ directive: 'Focus on tests', mode: 'interrupt', directory: DIRECTORY })
+      .expect(202);
+    expect(res.body.accepted).toBe(true);
+    expect(state.sent.length).toBe(1);
+  });
+
+  it('returns 400 directive is required when body is missing', async () => {
+    const runtime = createSessionSteerRuntime({
+      globalEventHub: { subscribeEvent() { return () => {}; } },
+      buildOpenCodeUrl: (fetchPath) => `http://opencode.test${fetchPath}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      broadcastGlobalUiEvent: () => {},
+    });
+    const app = express();
+    registerSessionSteerRoutes(app, runtime);
+    await request(app)
+      .post(`/api/openchamber/session/${SESSION}/steer`)
+      .send({ mode: 'interrupt', directory: DIRECTORY })
+      .expect(400, { error: 'directive is required' });
   });
 });

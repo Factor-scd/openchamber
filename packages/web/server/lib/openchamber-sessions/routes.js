@@ -416,6 +416,7 @@ export const createOpenChamberSessionService = (dependencies) => {
     emitSessionCreatedEvent,
     createSessionGoal: createSessionGoalOverride,
     sessionKnowledgeRuntime = null,
+    planGateRuntime = null,
   } = dependencies;
 
   // Last user message of an existing session, as a selection to reuse. Returns
@@ -757,6 +758,10 @@ export const createOpenChamberSessionService = (dependencies) => {
       ...(variant ? { variant } : {}),
       ...(cardID ? { cardID } : {}),
     });
+
+    if (planGate && planGateRuntime && typeof planGateRuntime.activate === 'function') {
+      planGateRuntime.activate(sessionID, sessionDirectory, cardID || '');
+    }
 
     let dispatch = { model, agent, variant, promptDispatched: false, dispatchedAsCommand: false };
     if (prompt) {
