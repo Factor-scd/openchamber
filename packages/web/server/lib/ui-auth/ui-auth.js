@@ -296,6 +296,7 @@ const isUrlAuthReadableHttpPath = (pathname) => {
     || pathname === '/api/global/event'
     || pathname === '/api/openchamber/events'
     || pathname === '/api/openchamber/realtime-proxy/sse'
+    || pathname === '/api/openchamber/agent-activity'
     || pathname === '/api/notifications/stream'
     || pathname === '/api/fs/raw'
     || pathname === '/api/fs/serve'

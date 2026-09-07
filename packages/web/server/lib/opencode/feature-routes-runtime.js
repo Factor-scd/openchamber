@@ -24,6 +24,9 @@ import { registerScheduledTaskRoutes } from '../scheduled-tasks/routes.js';
 import { registerOpenChamberSessionRoutes } from '../openchamber-sessions/routes.js';
 import { registerOpenChamberControlRoutes } from '../openchamber-control/routes.js';
 import { registerMarkdownImageGrantRoutes } from '../markdown-image-grants/routes.js';
+import { registerAgentActivityRoutes } from '../agent-activity/runtime.js';
+import { registerSessionSteerRoutes } from '../session-steer/runtime.js';
+import { registerPlanGateRoutes } from '../plan-gate/runtime.js';
 import { registerSkillRoutes } from './skill-routes.js';
 import { registerPluginRoutes } from './plugin-routes.js';
 import { getNpmInfo, clearCache as clearNpmCache } from './npm-registry.js';
@@ -138,6 +141,9 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       emitSessionCreatedEvent,
       permissionAutoAcceptRuntime,
       messageQueueRuntime,
+      agentActivityRuntime,
+      sessionSteerRuntime,
+      planGateRuntime,
     } = routeDependencies;
 
     registerSettingsUtilityRoutes(app, {
@@ -204,6 +210,10 @@ export const createFeatureRoutesRuntime = (dependencies) => {
     });
 
     registerOpenChamberControlRoutes(app, { controlService: openChamberControlService });
+
+    registerAgentActivityRoutes(app, { getOpenChamberEventClients, writeSseEvent });
+    registerSessionSteerRoutes(app, sessionSteerRuntime);
+    registerPlanGateRoutes(app, planGateRuntime);
 
     registerMarkdownImageGrantRoutes(app, {
       fsPromises,
