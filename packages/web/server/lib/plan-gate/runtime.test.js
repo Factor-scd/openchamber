@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createPlanGateRuntime } from './runtime.js';
+import express from 'express';
+import request from 'supertest';
+import { createPlanGateRuntime, registerPlanGateRoutes } from './runtime.js';
 
 const SESSION = 'ses_plan_test_1';
 const DIRECTORY = '/repo';
@@ -227,5 +229,45 @@ describe('plan-gate runtime', () => {
     });
 
     expect(broadcasts.filter((e) => e.type === 'openchamber:plan-ready').length).toBe(0);
+  });
+});
+
+describe('plan-gate route middleware', () => {
+  it('parses JSON body without global middleware on approve route', async () => {
+    const runtime = createPlanGateRuntime({
+      globalEventHub: { subscribeEvent() { return () => {}; } },
+      buildOpenCodeUrl: (fetchPath) => `http://opencode.test${fetchPath}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      broadcastGlobalUiEvent: () => {},
+      fetchImpl: vi.fn(async () => new Response(null, { status: 204 })),
+      planGateTimeoutMs: 60_000,
+    });
+    runtime.activate(SESSION, DIRECTORY);
+    const app = express();
+    registerPlanGateRoutes(app, runtime);
+    const res = await request(app)
+      .post(`/api/openchamber/session/${SESSION}/plan/approve`)
+      .send({ feedback: 'looks good' })
+      .expect(200);
+    expect(res.body.state).toBe('approved');
+  });
+
+  it('parses JSON body without global middleware on reject route', async () => {
+    const runtime = createPlanGateRuntime({
+      globalEventHub: { subscribeEvent() { return () => {}; } },
+      buildOpenCodeUrl: (fetchPath) => `http://opencode.test${fetchPath}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      broadcastGlobalUiEvent: () => {},
+      fetchImpl: vi.fn(async () => new Response(null, { status: 204 })),
+      planGateTimeoutMs: 60_000,
+    });
+    runtime.activate(SESSION, DIRECTORY);
+    const app = express();
+    registerPlanGateRoutes(app, runtime);
+    const res = await request(app)
+      .post(`/api/openchamber/session/${SESSION}/plan/reject`)
+      .send({ feedback: 'too vague' })
+      .expect(200);
+    expect(res.body.state).toBe('rejected');
   });
 });

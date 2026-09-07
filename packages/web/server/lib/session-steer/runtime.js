@@ -6,6 +6,8 @@
 // Follows the message-queue precedent: hub subscription, idle detection,
 // prompt_async with synthetic parts, waitForPromptLanded verification.
 
+import express from 'express';
+
 const asRecord = (value) => (value && typeof value === 'object' && !Array.isArray(value) ? value : null);
 const asNonEmptyString = (value) => (typeof value === 'string' && value.trim() ? value.trim() : '');
 const asList = (value) => (Array.isArray(value) ? value : []);
@@ -215,7 +217,7 @@ export function registerSessionSteerRoutes(app, runtime) {
     res.status(status).json({ error: error?.message ?? fallback });
   };
 
-  app.post('/api/openchamber/session/:sessionID/steer', async (req, res) => {
+  app.post('/api/openchamber/session/:sessionID/steer', express.json({ limit: '1mb' }), async (req, res) => {
     try {
       const sessionId = asNonEmptyString(req.params?.sessionID);
       const directive = asNonEmptyString(req.body?.directive);

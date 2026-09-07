@@ -7,6 +7,7 @@
 // runtime detects the plan in the first assistant message, emits plan-ready,
 // and holds until approve/reject/timeout.
 
+import express from 'express';
 import { GOAL_OBJECTIVE_CHAR_LIMIT } from '../session-goal/objectives.js';
 
 const asRecord = (value) => (value && typeof value === 'object' && !Array.isArray(value) ? value : null);
@@ -300,7 +301,7 @@ export function registerPlanGateRoutes(app, runtime) {
     res.status(status).json({ error: error?.message ?? fallback });
   };
 
-  app.post('/api/openchamber/session/:sessionID/plan/approve', async (req, res) => {
+  app.post('/api/openchamber/session/:sessionID/plan/approve', express.json({ limit: '1mb' }), async (req, res) => {
     try {
       const sessionId = asNonEmptyString(req.params?.sessionID);
       if (!sessionId) return res.status(400).json({ error: 'sessionID is required' });
@@ -313,7 +314,7 @@ export function registerPlanGateRoutes(app, runtime) {
     }
   });
 
-  app.post('/api/openchamber/session/:sessionID/plan/reject', async (req, res) => {
+  app.post('/api/openchamber/session/:sessionID/plan/reject', express.json({ limit: '1mb' }), async (req, res) => {
     try {
       const sessionId = asNonEmptyString(req.params?.sessionID);
       const feedback = asNonEmptyString(req.body?.feedback);

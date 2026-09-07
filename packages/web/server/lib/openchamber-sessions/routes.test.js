@@ -916,4 +916,72 @@ describe('openchamber session routes', () => {
       globalThis.fetch = originalFetch;
     }
   });
+
+  it('activates planGateRuntime when planGate is true', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async () => ({ ok: true, json: async () => ({ id: 'ses_pg_1' }) }));
+    const activateMock = vi.fn();
+    try {
+      const { app } = createApp({ planGateRuntime: { activate: activateMock } });
+      const response = await request(app)
+        .post('/api/openchamber/sessions')
+        .send({ directory: '/repo/app', planGate: true })
+        .expect(200);
+
+      expect(activateMock).toHaveBeenCalledTimes(1);
+      expect(activateMock).toHaveBeenCalledWith('ses_pg_1', '/repo/app', '');
+      expect(response.body.planGate).toBe(true);
+      expect(response.body.sessionId).toBe('ses_pg_1');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('does not activate planGateRuntime when planGate is absent', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async () => ({ ok: true, json: async () => ({ id: 'ses_npg_1' }) }));
+    const activateMock = vi.fn();
+    try {
+      const { app } = createApp({ planGateRuntime: { activate: activateMock } });
+      await request(app)
+        .post('/api/openchamber/sessions')
+        .send({ directory: '/repo/app' })
+        .expect(200);
+
+      expect(activateMock).not.toHaveBeenCalled();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('activates planGateRuntime with cardID when both planGate and cardID are provided', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async () => ({ ok: true, json: async () => ({ id: 'ses_pg_2' }) }));
+    const activateMock = vi.fn();
+    try {
+      const { app } = createApp({ planGateRuntime: { activate: activateMock } });
+      await request(app)
+        .post('/api/openchamber/sessions')
+        .send({ directory: '/repo/app', planGate: true, cardID: 'card_xyz' })
+        .expect(200);
+
+      expect(activateMock).toHaveBeenCalledWith('ses_pg_2', '/repo/app', 'card_xyz');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('gracefully skips planGateRuntime when not provided', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async () => ({ ok: true, json: async () => ({ id: 'ses_no_rt' }) }));
+    try {
+      const { app } = createApp();
+      await request(app)
+        .post('/api/openchamber/sessions')
+        .send({ directory: '/repo/app', planGate: true })
+        .expect(200);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });
