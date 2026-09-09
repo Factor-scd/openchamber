@@ -1,4 +1,5 @@
 import type { RuntimeAPIs, TerminalAPI } from '@openchamber/ui/lib/api/types';
+import { registerRuntimeProvider } from '@openchamber/ui/lib/runtime-api-registry';
 import { createVSCodeFilesAPI } from './files';
 import { createVSCodeSettingsAPI } from './settings';
 import { createVSCodePermissionsAPI } from './permissions';
@@ -38,3 +39,10 @@ export const createVSCodeAPIs = (): RuntimeAPIs => ({
   editor: createVSCodeEditorAPI(),
   vscode: createVSCodeActionsAPI(),
 });
+
+/**
+ * Register the VS Code provider with the runtime API registry.
+ */
+export const registerVSCodeProvider = (): void => {
+  registerRuntimeProvider('vscode', () => createVSCodeAPIs());
+};

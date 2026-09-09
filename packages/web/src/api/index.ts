@@ -5,6 +5,7 @@ import {
   setRuntimeUrlResolver,
   type RuntimeUrlResolver,
 } from '@openchamber/ui/lib/runtime-url';
+import { registerRuntimeProvider } from '@openchamber/ui/lib/runtime-api-registry';
 import { useDirectoryStore } from '@openchamber/ui/stores/useDirectoryStore';
 import { createWebTerminalAPI } from './terminal';
 import { createWebGitAPI } from './git';
@@ -40,19 +41,27 @@ export const createWebAPIs = (options: WebAPIsOptions = {}): RuntimeAPIs => {
   const activeUrls = createActiveRuntimeUrlResolver();
 
   return {
-  runtime: { platform: 'web', isDesktop: false, isVSCode: false, label: 'web' },
-  terminal: createWebTerminalAPI(),
-  git: createWebGitAPI(),
-  files: createWebFilesAPI({ urls: activeUrls, getDirectory: () => useDirectoryStore.getState().currentDirectory }),
-  settings: createWebSettingsAPI(),
-  permissions: createWebPermissionsAPI(),
-  notifications: createWebNotificationsAPI(),
-  github: createWebGitHubAPI({ urls: activeUrls }),
-  linear: createWebLinearAPI(),
-  gitlab: createWebGitLabAPI({ urls: activeUrls }),
-  gitea: createWebGiteaAPI({ urls: activeUrls }),
-  push: createWebPushAPI(),
-  clientAuth: createWebClientAuthAPI(),
-  tools: createWebToolsAPI(),
+    runtime: { platform: 'web', isDesktop: false, isVSCode: false, label: 'web' },
+    terminal: createWebTerminalAPI(),
+    git: createWebGitAPI(),
+    files: createWebFilesAPI({ urls: activeUrls, getDirectory: () => useDirectoryStore.getState().currentDirectory }),
+    settings: createWebSettingsAPI(),
+    permissions: createWebPermissionsAPI(),
+    notifications: createWebNotificationsAPI(),
+    github: createWebGitHubAPI({ urls: activeUrls }),
+    linear: createWebLinearAPI(),
+    gitlab: createWebGitLabAPI({ urls: activeUrls }),
+    gitea: createWebGiteaAPI({ urls: activeUrls }),
+    push: createWebPushAPI(),
+    clientAuth: createWebClientAuthAPI(),
+    tools: createWebToolsAPI(),
   };
+};
+
+/**
+ * Register the web provider with the runtime API registry. Call once during
+ * app bootstrap (after the URL resolver and auth are configured).
+ */
+export const registerWebProvider = (): void => {
+  registerRuntimeProvider('web', () => createWebAPIs());
 };
