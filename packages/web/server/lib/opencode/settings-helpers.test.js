@@ -784,7 +784,7 @@ describe('settings registry gate', () => {
     securityScopedBookmarks: ['bookmark'], pinnedDirectories: ['/home/testuser/project'],
     desktopLanAccessEnabled: true, desktopKeepAwakeEnabled: true, desktopMinimizeToTrayEnabled: true, desktopMacMenuBarEnabled: true,
     desktopUiPassword: 'secret', githubClientId: 'client', githubScopes: 'repo', skillCatalogs: [{ id: 'c', label: 'C', source: 'https://x' }],
-    defaultGitIdentityId: 'global', permissionAutoAccept: { sessions: { s: true }, revision: 1 },
+    defaultGitIdentityId: 'global', gitProviderId: 'anthropic', gitModelId: 'claude', gitProviders: { github: { apiBaseUrl: 'https://github.example.com/api' } }, permissionAutoAccept: { sessions: { s: true }, revision: 1 },
     agentControlToolEnabled: true, agentWebToolEnabled: true, agentMemoryToolEnabled: true, openCodeUpdateToastDismissedVersion: '1.0.0',
     autoDeleteEnabled: true, autoDeleteAfterDays: 30, sessionRetentionAction: 'archive', terminalShell: 'zsh', terminalLoginShells: ['zsh'],
     openInAppId: 'vscode', dictationEnabled: true, sttProvider: 'local', sttServerUrl: 'http://localhost:8001/v1', sttModel: 'm', sttLocalModel: 'm', sttLanguage: 'en',
@@ -865,7 +865,10 @@ describe('settings registry gate', () => {
       agentMemoryFeatureAvailable: true,
       desktopHosts: [],
       notARealKey: 1,
-    })).toEqual({});
+    })).toEqual({
+      gitProviderId: 'anthropic',
+      gitModelId: 'claude',
+    });
   });
 
   it('never returns secret keys from a formatted response', () => {

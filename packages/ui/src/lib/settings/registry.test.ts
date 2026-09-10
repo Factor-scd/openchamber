@@ -72,6 +72,7 @@ describe('settings registry', () => {
       followUpBehavior: 'steer',
       queueModeEnabled: false,
       autoDeleteAfterDays: 365,
+      gitProviderId: 'anthropic',
       sttProvider: 'openai-compatible',
     });
     expect(parseSettingsDocument(null)).toBeNull();

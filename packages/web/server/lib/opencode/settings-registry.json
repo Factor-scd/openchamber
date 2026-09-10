@@ -111,6 +111,15 @@
     "defaultGitIdentityId": {
       "scope": "instance"
     },
+    "gitProviderId": {
+      "scope": "instance"
+    },
+    "gitModelId": {
+      "scope": "instance"
+    },
+    "gitProviders": {
+      "scope": "instance"
+    },
     "permissionAutoAccept": {
       "scope": "instance"
     },
