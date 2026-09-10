@@ -3,6 +3,7 @@ import { WorktreeSectionContent } from '@/components/sections/openchamber/Worktr
 import { ProjectActionsSection } from '@/components/sections/projects/ProjectActionsSection';
 import { ProjectGitProvidersSection } from '@/components/sections/projects/ProjectGitProvidersSection';
 import { ProjectIdentityFields } from '@/components/sections/projects/ProjectIdentityFields';
+import { SharedProjectConfigSection } from '@/components/sections/projects/SharedProjectConfigSection';
 import {
   useProjectIdentityForm,
   type ProjectIdentitySaveData,
@@ -51,6 +52,7 @@ export const ProjectSettingsPanel: React.FC<ProjectSettingsPanelProps> = ({
       <ProjectGitProvidersSection projectRef={projectRef} />
       <ProjectActionsSection projectRef={projectRef} />
       {showWorktrees ? <WorktreeSectionContent projectRef={projectRef} /> : null}
+      <SharedProjectConfigSection projectRef={projectRef} />
     </div>
   );
 };

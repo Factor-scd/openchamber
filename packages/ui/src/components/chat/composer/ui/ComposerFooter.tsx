@@ -24,6 +24,7 @@ import { ComposerActionButtons } from './ComposerActionButtons';
 import { ComposerAttachmentControls } from './ComposerAttachmentControls';
 import { FocusModeButton } from './FocusModeButton';
 import { PermissionAutoAcceptButton } from './PermissionAutoAcceptButton';
+import type { BtwSelection } from '@/stores/useBtwStore';
 
 const MemoModelControls = React.memo(ModelControls);
 const MemoComposerDictation = React.memo(ComposerDictation);
@@ -68,6 +69,9 @@ export interface ComposerFooterProps {
     onDictationInsert: (text: string) => void;
     onDictationInsertAndSend: (text: string) => void;
     onDictationContentHeightChange: (height: number | null) => void;
+    isBtw?: boolean;
+    modelSessionId?: string | null;
+    btwSelection: BtwSelection;
 }
 
 export function ComposerFooter(props: ComposerFooterProps) {
@@ -109,6 +113,9 @@ export function ComposerFooter(props: ComposerFooterProps) {
         onDictationInsert,
         onDictationInsertAndSend,
         onDictationContentHeightChange,
+        isBtw = false,
+        modelSessionId,
+        btwSelection,
     } = props;
 
     const gitProvider = useGitProvider(directory);
@@ -130,7 +137,7 @@ export function ComposerFooter(props: ComposerFooterProps) {
                 <>
                     <div className="flex w-full items-center justify-between gap-x-1.5">
                         <div className="composer-mobile-actions flex items-center gap-x-2 pl-1">
-                            <ComposerAttachmentControls
+                            {!isBtw ? <ComposerAttachmentControls
                                 isVSCode={isVSCode}
                                 footerIconButtonClass={footerIconButtonClass}
                                 iconSizeClass={iconSizeClass}
@@ -142,7 +149,7 @@ export function ComposerFooter(props: ComposerFooterProps) {
                                 openLinearPicker={onOpenLinearPicker}
                                 onOpenSettings={onOpenSettings}
                                 onOpenMobileSheet={onOpenAttachSheet}
-                            />
+                            /> : null}
                             <PermissionAutoAcceptButton
                                 footerIconButtonClass={footerIconButtonClass}
                                 iconSizeClass={iconSizeClass}
@@ -150,18 +157,18 @@ export function ComposerFooter(props: ComposerFooterProps) {
                                 permissionAutoAcceptEnabled={permissionAutoAcceptEnabled}
                                 handlePermissionAutoAcceptToggle={onTogglePermissionAutoAccept}
                             />
-                            <SessionGoalButton
+                            {!isBtw ? <SessionGoalButton
                                 sessionId={currentSessionId}
                                 directory={directory}
                                 draftOpen={newSessionDraftOpen}
                                 footerIconButtonClass={footerIconButtonClass}
                                 iconSizeClass={iconSizeClass}
-                            />
-                            <SessionGoalObjectiveCounter length={messageLength} />
+                            /> : null}
+                            {!isBtw ? <SessionGoalObjectiveCounter length={messageLength} /> : null}
                         </div>
                         <div className="flex items-center min-w-0 gap-x-1 justify-end">
                             <div className="flex items-center gap-x-1 flex-shrink-0">
-                                <button
+                                {!isBtw ? <button
                                     type="button"
                                     className={footerIconButtonClass}
                                     // Keep the soft keyboard open (same guard as
@@ -180,7 +187,7 @@ export function ComposerFooter(props: ComposerFooterProps) {
                                     aria-label={t('chat.dictation.start')}
                                 >
                                     <Icon name="mic" className={cn(iconSizeClass, 'text-current')} />
-                                </button>
+                                </button> : null}
                                 <ComposerActionButtons
                                     isMobile={isMobile}
                                     footerIconButtonClass={footerIconButtonClass}
@@ -202,7 +209,7 @@ export function ComposerFooter(props: ComposerFooterProps) {
             ) : (
                 <>
                     <div className={cn("flex items-center flex-shrink-0", footerGapClass)}>
-                        <ComposerAttachmentControls
+                        {!isBtw ? <ComposerAttachmentControls
                             isVSCode={isVSCode}
                             footerIconButtonClass={footerIconButtonClass}
                             iconSizeClass={iconSizeClass}
@@ -213,13 +220,13 @@ export function ComposerFooter(props: ComposerFooterProps) {
                             showLinearPicker={showLinearPicker}
                             openLinearPicker={onOpenLinearPicker}
                             onOpenSettings={onOpenSettings}
-                        />
-                        <FocusModeButton
+                        /> : null}
+                        {!isBtw ? <FocusModeButton
                             footerIconButtonClass={footerIconButtonClass}
                             iconSizeClass={iconSizeClass}
                             isExpandedInput={isExpandedInput}
                             onToggle={onToggleExpandedInput}
-                        />
+                        /> : null}
                         <PermissionAutoAcceptButton
                             footerIconButtonClass={footerIconButtonClass}
                             iconSizeClass={iconSizeClass}
@@ -228,19 +235,19 @@ export function ComposerFooter(props: ComposerFooterProps) {
                             handlePermissionAutoAcceptToggle={onTogglePermissionAutoAccept}
                             withTooltip
                         />
-                        <SessionGoalButton
+                        {!isBtw ? <SessionGoalButton
                             sessionId={currentSessionId}
                             directory={directory}
                             draftOpen={newSessionDraftOpen}
                             footerIconButtonClass={footerIconButtonClass}
                             iconSizeClass={iconSizeClass}
                             withTooltip
-                        />
-                        <SessionGoalObjectiveCounter length={messageLength} />
+                        /> : null}
+                        {!isBtw ? <SessionGoalObjectiveCounter length={messageLength} /> : null}
                     </div>
                     <div className={cn('flex items-center flex-1 justify-end', footerGapClass, 'md:gap-x-3')}>
-                        <MemoModelControls className={cn('flex-1 min-w-0 justify-end')} />
-                        <MemoComposerDictation
+                        {isBtw ? <ModelControls className="flex-1 min-w-0 justify-end" sessionId={modelSessionId ?? null} selection={btwSelection} /> : <MemoModelControls className={cn('flex-1 min-w-0 justify-end')} />}
+                        {!isBtw ? <MemoComposerDictation
                             radius={chatInputRadius}
                             isMobile={isMobile}
                             footerIconButtonClass={footerIconButtonClass}
@@ -250,7 +257,7 @@ export function ComposerFooter(props: ComposerFooterProps) {
                             onInsert={onDictationInsert}
                             onInsertAndSend={onDictationInsertAndSend}
                             onContentHeightChange={onDictationContentHeightChange}
-                        />
+                        /> : null}
                         <ComposerActionButtons
                             isMobile={isMobile}
                             footerIconButtonClass={footerIconButtonClass}
