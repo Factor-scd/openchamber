@@ -29,11 +29,15 @@ interface SettingsSearchAvailabilityContext extends SettingsRuntimeContext {
   isLinux: boolean;
   // Windows ARM64 — temporary workaround gate (see opencode#19130).
   isWindowsArm64: boolean;
-  // Git provider override fields only render once an account is connected.
-  gitProvidersConnected: { github: boolean; gitlab: boolean; gitea: boolean };
 }
 
 const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
+  {
+    id: 'chat.activity-default',
+    page: 'chat',
+    titleKey: 'settings.openchamber.visual.section.activityDefault',
+    keywords: ['activity', 'collapsed', 'expanded', 'live', 'tools', 'history'],
+  },
   {
     id: 'appearance.language',
     page: 'appearance',
@@ -76,6 +80,13 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     // Exactly matches the render guard in OpenChamberVisualSettings: any darwin
     // Electron shell (isMac already implies isDesktopShell), local or remote host.
     isAvailable: (ctx) => ctx.isMac,
+  },
+  {
+    id: 'appearance.scrollbars',
+    page: 'appearance',
+    titleKey: 'settings.openchamber.visual.field.alwaysShowScrollbars',
+    descriptionKey: 'settings.openchamber.visual.field.alwaysShowScrollbarsHint',
+    keywords: ['scrollbar', 'scrollbars', 'scroll', 'mouse', 'wheel', 'accessibility', 'always visible'],
   },
   {
     id: 'appearance.pwa-install-name',
@@ -151,17 +162,18 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     keywords: ['editor', 'autosave', 'auto-save', 'files', 'save'],
   },
   {
-    id: 'appearance.expanded-editor-toolbar',
-    page: 'general',
-    titleKey: 'settings.openchamber.visual.field.expandedEditorToolbar',
-    keywords: ['editor', 'toolbar', 'tabs', 'docked', 'files'],
-    isAvailable: (ctx) => !ctx.isVSCode,
-  },
-  {
     id: 'appearance.file-editor-keymap',
     page: 'general',
     titleKey: 'settings.openchamber.visual.field.fileEditorKeymap',
     keywords: ['editor', 'vim', 'keymap'],
+  },
+  {
+    id: 'appearance.session-tabs',
+    page: 'general',
+    titleKey: 'settings.openchamber.visual.field.sessionTabsGroup',
+    descriptionKey: 'settings.openchamber.visual.field.sessionTabsInfo',
+    keywords: ['session', 'tabs', 'header', 'working set'],
+    isAvailable: (ctx) => !ctx.isMobile && !ctx.isVSCode,
   },
   {
     id: 'appearance.terminal-quick-keys',
@@ -240,6 +252,19 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     page: 'chat',
     titleKey: 'settings.openchamber.visual.section.reasoning',
     keywords: ['thinking', 'traces'],
+  },
+  {
+    id: 'chat.streaming',
+    page: 'chat',
+    titleKey: 'settings.openchamber.visual.section.streaming',
+    keywords: ['stream', 'scroll'],
+  },
+  {
+    id: 'chat.streaming-auto-follow',
+    page: 'chat',
+    titleKey: 'settings.openchamber.visual.field.streamingAutoFollow',
+    descriptionKey: 'settings.openchamber.visual.field.streamingAutoFollowInfo',
+    keywords: ['autoscroll', 'auto-scroll', 'follow', 'stick to bottom', 'streaming'],
   },
   {
     id: 'chat.sticky-user-header',
@@ -353,7 +378,7 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     id: 'chat.composer',
     page: 'chat',
     titleKey: 'settings.openchamber.visual.section.composer',
-    keywords: ['input', 'draft', 'spellcheck'],
+    keywords: ['input', 'draft', 'spellcheck', 'paste'],
   },
   {
     id: 'chat.spellcheck',
@@ -374,9 +399,10 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     page: 'chat',
     titleKey: 'settings.openchamber.visual.field.enterToSend',
     descriptionKey: 'settings.openchamber.visual.field.enterToSendHint',
-    keywords: ['enter', 'shift enter', 'send', 'newline'],
+    keywords: ['enter', 'shift enter', 'ctrl enter', 'cmd enter', 'mod enter', 'send', 'newline'],
   },
-  {    id: 'sessions.default-model',
+  {
+    id: 'sessions.default-model',
     page: 'sessions',
     titleKey: 'settings.openchamber.defaults.field.defaultModel',
     keywords: ['model', 'provider', 'new sessions'],
@@ -536,66 +562,6 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     isAvailable: (ctx) => !ctx.isVSCode && useUIStore.getState().agentMemoryFeatureAvailable,
   },
   {
-    id: 'git.github-account',
-    page: 'git',
-    titleKey: 'settings.github.page.actions.connect',
-    keywords: ['github', 'account', 'oauth', 'prs', 'issues'],
-  },
-  {
-    id: 'git.gitlab-account',
-    page: 'git',
-    titleKey: 'settings.gitlab.page.actions.connect',
-    keywords: ['gitlab', 'account', 'pat', 'personal access token', 'issues', 'merge requests'],
-  },
-  {
-    id: 'git.github-api-base-url',
-    page: 'git',
-    titleKey: 'settings.github.page.apiBaseUrl.label',
-    descriptionKey: 'settings.github.page.apiBaseUrl.description',
-    keywords: ['github', 'api', 'base url', 'enterprise', 'self-hosted', 'server'],
-    isAvailable: (ctx) => ctx.gitProvidersConnected.github,
-  },
-  {
-    id: 'git.github-detect-urls',
-    page: 'git',
-    titleKey: 'settings.github.page.detectUrls.label',
-    descriptionKey: 'settings.github.page.detectUrls.description',
-    keywords: ['github', 'detect', 'remote', 'host', 'domain', 'ssh', 'url', 'self-hosted'],
-    isAvailable: (ctx) => ctx.gitProvidersConnected.github,
-  },
-  {
-    id: 'git.gitlab-api-base-url',
-    page: 'git',
-    titleKey: 'settings.gitlab.page.apiBaseUrl.label',
-    descriptionKey: 'settings.gitlab.page.apiBaseUrl.description',
-    keywords: ['gitlab', 'api', 'base url', 'self-hosted', 'server', 'instance'],
-    isAvailable: (ctx) => ctx.gitProvidersConnected.gitlab,
-  },
-  {
-    id: 'git.gitlab-detect-urls',
-    page: 'git',
-    titleKey: 'settings.gitlab.page.detectUrls.label',
-    descriptionKey: 'settings.gitlab.page.detectUrls.description',
-    keywords: ['gitlab', 'detect', 'remote', 'host', 'domain', 'ssh', 'url', 'self-hosted'],
-    isAvailable: (ctx) => ctx.gitProvidersConnected.gitlab,
-  },
-  {
-    id: 'git.gitea-api-base-url',
-    page: 'git',
-    titleKey: 'settings.gitea.page.apiBaseUrl.label',
-    descriptionKey: 'settings.gitea.page.apiBaseUrl.description',
-    keywords: ['gitea', 'forgejo', 'api', 'base url', 'self-hosted', 'server', 'instance'],
-    isAvailable: (ctx) => ctx.gitProvidersConnected.gitea,
-  },
-  {
-    id: 'git.gitea-detect-urls',
-    page: 'git',
-    titleKey: 'settings.gitea.page.detectUrls.label',
-    descriptionKey: 'settings.gitea.page.detectUrls.description',
-    keywords: ['gitea', 'forgejo', 'detect', 'remote', 'host', 'domain', 'ssh', 'url', 'self-hosted'],
-    isAvailable: (ctx) => ctx.gitProvidersConnected.gitea,
-  },
-  {
     id: 'git.identities',
     page: 'git',
     titleKey: 'settings.gitIdentities.page.section.title',
@@ -674,6 +640,26 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     page: 'projects',
     titleKey: 'settings.openchamber.worktrees.setup.waitForCommands',
     keywords: ['worktree', 'setup commands', 'bootstrap', 'wait'],
+  },
+  {
+    id: 'projects.worktree.setup.replace',
+    page: 'projects',
+    titleKey: 'settings.projects.shared.replaceMode',
+    keywords: ['worktree', 'setup commands', 'shared', 'team', 'only mine'],
+  },
+  {
+    id: 'projects.shared',
+    page: 'projects',
+    titleKey: 'settings.projects.shared.title',
+    descriptionKey: 'settings.projects.shared.description',
+    keywords: ['shared', 'team', 'repository', '.openchamber', 'project.json', 'trust'],
+  },
+  {
+    id: 'projects.shared.plansDir',
+    page: 'projects',
+    titleKey: 'settings.projects.shared.plansDir',
+    descriptionKey: 'settings.projects.shared.plansDirInfo',
+    keywords: ['plans', 'folder', 'shared', 'team', 'docs'],
   },
   {
     id: 'projects.git-providers',
@@ -1098,7 +1084,8 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     titleKey: 'settings.integrations.linear.mapping.defaultProject',
     descriptionKey: 'settings.integrations.linear.mapping.defaultProject.info',
     keywords: ['linear', 'project', 'team', 'map', 'workspace', 'directory'],
-    isAvailable: (ctx) => !ctx.isVSCode,  },
+    isAvailable: (ctx) => !ctx.isVSCode,
+  },
 ] as const;
 
 interface BuildSettingsSearchResultsOptions {

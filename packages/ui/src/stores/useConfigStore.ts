@@ -10,9 +10,7 @@ import { filterVisibleAgents } from "./useAgentsStore";
 import { isPrimaryMode } from "@/components/chat/mobileControlsUtils";
 import { useSessionUIStore } from "@/sync/session-ui-store";
 import { useSelectionStore } from "@/sync/selection-store";
-import { getRegisteredRuntimeAPIs } from "@/contexts/runtimeAPIRegistry";
-import { updateDesktopSettings } from "@/lib/persistence";
-import { useGitProviderDomainsStore } from "@/stores/useGitProviderDomainsStore";
+import { loadDesktopSettings, updateDesktopSettings } from "@/lib/persistence";
 import { useDirectoryStore } from "@/stores/useDirectoryStore";
 import { useProjectsStore } from "@/stores/useProjectsStore";
 import { resolveProjectForSessionDirectory } from "@/lib/projectResolution";
@@ -37,21 +35,6 @@ const GIT_UTILITY_PROVIDER_ID = "zen";
 const GIT_UTILITY_PREFERRED_MODEL_ID = "big-pickle";
 const PROVIDER_CONFIG_REFRESH_CONCURRENCY = 4;
 
-const normalizeSttProvider = (value: unknown): 'local' | 'openai-compatible' | undefined => {
-    if (value === 'local' || value === 'openai-compatible') {
-        return value;
-    }
-    // Legacy providers: 'server' used an OpenAI-compatible endpoint;
-    // 'browser' and 'wasm' map to the local default.
-    if (value === 'server') {
-        return 'openai-compatible';
-    }
-    if (value === 'browser' || value === 'wasm') {
-        return 'local';
-    }
-    return undefined;
-};
-
 interface OpenChamberDefaults {
     defaultModel?: string;
     defaultVariant?: string;
@@ -66,8 +49,6 @@ interface OpenChamberDefaults {
     sttModel?: string;
     sttLocalModel?: string;
     sttLanguage?: string;
-    /** Raw `gitProviders` section of server settings (per-provider apiBaseUrl/detectUrls). */
-    gitProviders?: unknown;
 }
 
 // Directory activation re-reads the OpenChamber defaults, which are global,
@@ -103,93 +84,29 @@ const requestOpenChamberDefaults = async (): Promise<OpenChamberDefaults> => {
         return result;
     };
     try {
-        // 1. Runtime settings API (VSCode)
-        const runtimeSettings = getRegisteredRuntimeAPIs()?.settings;
-        if (runtimeSettings) {
-            try {
-                const result = await runtimeSettings.load();
-                const data = result?.settings;
-                if (data) {
-                    const defaultModel = typeof data?.defaultModel === 'string' ? data.defaultModel.trim() : '';
-                    const defaultVariant = typeof data?.defaultVariant === 'string' ? data.defaultVariant.trim() : '';
-                    const defaultAgent = typeof data?.defaultAgent === 'string' ? data.defaultAgent.trim() : '';
-                    const gitmojiEnabled = typeof data?.gitmojiEnabled === 'boolean' ? data.gitmojiEnabled : undefined;
-                    const defaultFileViewerPreview = typeof data?.defaultFileViewerPreview === 'boolean' ? data.defaultFileViewerPreview : undefined;
-                    const zenModel = typeof data?.zenModel === 'string' ? data.zenModel.trim() : '';
-                    const messageStreamTransport =
-                        data?.messageStreamTransport === 'ws' || data?.messageStreamTransport === 'sse' || data?.messageStreamTransport === 'auto'
-                            ? data.messageStreamTransport
-                            : undefined;
-                    const sttProvider = normalizeSttProvider(data?.sttProvider);
-                    const sttServerUrl = typeof data?.sttServerUrl === 'string' ? data.sttServerUrl.trim() : undefined;
-                    const sttModel = typeof data?.sttModel === 'string' ? data.sttModel.trim() : undefined;
-                    const sttLocalModel = typeof data?.sttLocalModel === 'string' ? data.sttLocalModel.trim() : undefined;
-                    const sttLanguage = typeof data?.sttLanguage === 'string' ? data.sttLanguage.trim() : undefined;
-                    const gitProviders = data?.gitProviders;
-
-                    return finish('runtime-settings', {
-                        defaultModel: defaultModel.length > 0 ? defaultModel : undefined,
-                        defaultVariant: defaultVariant.length > 0 ? defaultVariant : undefined,
-                        defaultAgent: defaultAgent.length > 0 ? defaultAgent : undefined,
-                        autoCreateWorktree: typeof data?.autoCreateWorktree === 'boolean' ? data.autoCreateWorktree : undefined,
-                        gitmojiEnabled,
-                        defaultFileViewerPreview,
-                        zenModel: zenModel.length > 0 ? zenModel : undefined,
-                        messageStreamTransport,
-                        sttProvider,
-                        sttServerUrl,
-                        sttModel,
-                        sttLocalModel,
-                        sttLanguage,
-                        gitProviders,
-                    });
-                }
-            } catch {
-                // Fall through to fetch
-            }
+        const data = await loadDesktopSettings();
+        if (!data) {
+            return finish('settings-unavailable', {});
         }
+        const defaultModel = data.defaultModel?.trim() ?? '';
+        const defaultVariant = data.defaultVariant?.trim() ?? '';
+        const defaultAgent = data.defaultAgent?.trim() ?? '';
+        const zenModel = data.zenModel ?? '';
 
-        // 2. Fetch API (Web/server)
-        const response = await runtimeFetch('/api/config/settings', {
-            method: 'GET',
-            headers: { Accept: 'application/json' },
-        });
-        if (!response.ok) {
-            return finish('settings-route-not-ok', {});
-        }
-        const data = await response.json();
-        const defaultModel = typeof data?.defaultModel === 'string' ? data.defaultModel.trim() : '';
-        const defaultVariant = typeof data?.defaultVariant === 'string' ? data.defaultVariant.trim() : '';
-        const defaultAgent = typeof data?.defaultAgent === 'string' ? data.defaultAgent.trim() : '';
-        const gitmojiEnabled = typeof data?.gitmojiEnabled === 'boolean' ? data.gitmojiEnabled : undefined;
-        const defaultFileViewerPreview = typeof data?.defaultFileViewerPreview === 'boolean' ? data.defaultFileViewerPreview : undefined;
-        const zenModel = typeof data?.zenModel === 'string' ? data.zenModel.trim() : '';
-        const messageStreamTransport =
-            data?.messageStreamTransport === 'ws' || data?.messageStreamTransport === 'sse' || data?.messageStreamTransport === 'auto'
-                ? data.messageStreamTransport
-                : undefined;
-        const sttProvider = normalizeSttProvider(data?.sttProvider);
-        const sttServerUrl = typeof data?.sttServerUrl === 'string' ? data.sttServerUrl.trim() : undefined;
-        const sttModel = typeof data?.sttModel === 'string' ? data.sttModel.trim() : undefined;
-        const sttLocalModel = typeof data?.sttLocalModel === 'string' ? data.sttLocalModel.trim() : undefined;
-        const sttLanguage = typeof data?.sttLanguage === 'string' ? data.sttLanguage.trim() : undefined;
-        const gitProviders = data?.gitProviders;
-
-        return finish('settings-route', {
+        return finish('settings', {
             defaultModel: defaultModel.length > 0 ? defaultModel : undefined,
             defaultVariant: defaultVariant.length > 0 ? defaultVariant : undefined,
             defaultAgent: defaultAgent.length > 0 ? defaultAgent : undefined,
-            autoCreateWorktree: typeof data?.autoCreateWorktree === 'boolean' ? data.autoCreateWorktree : undefined,
-            gitmojiEnabled,
-            defaultFileViewerPreview,
+            autoCreateWorktree: data.autoCreateWorktree,
+            gitmojiEnabled: data.gitmojiEnabled,
+            defaultFileViewerPreview: data.defaultFileViewerPreview,
             zenModel: zenModel.length > 0 ? zenModel : undefined,
-            messageStreamTransport,
-            sttProvider,
-            sttServerUrl,
-            sttModel,
-            sttLocalModel,
-            sttLanguage,
-            gitProviders,
+            messageStreamTransport: data.messageStreamTransport,
+            sttProvider: data.sttProvider,
+            sttServerUrl: data.sttServerUrl,
+            sttModel: data.sttModel,
+            sttLocalModel: data.sttLocalModel,
+            sttLanguage: data.sttLanguage,
         });
     } catch (error) {
         markStartupTrace('config.defaults:error', { error: error instanceof Error ? error.message : String(error) });
@@ -731,28 +648,12 @@ const toDirectoryKey = (directory: string | null | undefined): string => {
 
 const fromDirectoryKey = (key: string): string | null => (key === DIRECTORY_KEY_GLOBAL ? null : key);
 
-/**
- * The directory store is part of this store's circular import cluster
- * (useConfigStore → persistence → session-ui-store → useConfigStore, with
- * useDirectoryStore in the same strongly-connected component). In the bundled
- * chunk its module body may not have run yet when this module evaluates, so the
- * static import binding is in TDZ. Read it through the window registration that
- * useDirectoryStore publishes as soon as it initializes; fall back to the
- * client directory, which the directory store seeds at the same time.
- */
-const getDirectoryStore = (): typeof useDirectoryStore | null => {
-    if (typeof window === 'undefined') {
-        return null;
-    }
-    return window.__zustand_directory_store__ ?? null;
-};
-
 const resolveInitialDirectoryKey = (): string => {
     if (typeof window === 'undefined') {
         return DIRECTORY_KEY_GLOBAL;
     }
 
-    const directory = opencodeClient.getDirectory() ?? getDirectoryStore()?.getState().currentDirectory;
+    const directory = opencodeClient.getDirectory() ?? useDirectoryStore.getState().currentDirectory;
     return toConfigDirectoryKey(directory);
 };
 
@@ -2136,18 +2037,6 @@ export const useConfigStore = create<ConfigStore>()(
 
                             const safeAgents = Array.isArray(agents) ? agents : [];
 
-                            // Seed the git provider domains store from the server
-                            // `gitProviders` settings (authoritative); the runtime
-                            // settings path or the fetch path above provided them.
-                            // Failure here must not break the agent load.
-                            if (openChamberDefaults.gitProviders !== undefined) {
-                                try {
-                                    useGitProviderDomainsStore.getState().hydrateFromServer(openChamberDefaults.gitProviders);
-                                } catch {
-                                    // Ignore — non-authoritative state stays as-is.
-                                }
-                            }
-
                             const providerLoad = _inFlightProviders.get(directoryKey);
                             if (providerLoad) {
                                 markStartupTrace('loadAgents:awaitProviders', { directoryKey, source });
@@ -2255,8 +2144,6 @@ export const useConfigStore = create<ConfigStore>()(
                             if (shouldPersistResolvedZenModel && resolvedZenModel) {
                                 updateDesktopSettings({
                                     zenModel: resolvedZenModel,
-                                    gitProviderId: '',
-                                    gitModelId: '',
                                 }).catch(() => {
                                     // Ignore errors - best effort cleanup
                                 });
@@ -3618,24 +3505,14 @@ if (!unsubscribeConfigStoreSyncConfigChanges) {
 }
 
 if (typeof window !== "undefined" && !unsubscribeConfigStoreDirectoryChanges) {
-    // useDirectoryStore's module body may not have run yet when this module
-    // evaluates (the two stores share a circular import cluster, and the
-    // bundled chunk can evaluate either body first). Defer subscription setup
-    // until after module evaluation completes so the import binding is no
-    // longer in TDZ. The subscription is registered before any user-driven
-    // directory change can occur; the initial directory is reconciled by
-    // initializeApp.
-    queueMicrotask(() => {
-        if (unsubscribeConfigStoreDirectoryChanges) return;
-        unsubscribeConfigStoreDirectoryChanges = useDirectoryStore.subscribe((state, prevState) => {
-            const nextKey = toDirectoryKey(state.currentDirectory);
-            const prevKey = toDirectoryKey(prevState.currentDirectory);
-            if (nextKey === prevKey) {
-                return;
-            }
+    unsubscribeConfigStoreDirectoryChanges = useDirectoryStore.subscribe((state, prevState) => {
+        const nextKey = toDirectoryKey(state.currentDirectory);
+        const prevKey = toDirectoryKey(prevState.currentDirectory);
+        if (nextKey === prevKey) {
+            return;
+        }
 
-            markStartupTrace('directoryStore:changed', { previous: prevKey, next: nextKey });
-            void useConfigStore.getState().activateDirectory(state.currentDirectory);
-        });
+        markStartupTrace('directoryStore:changed', { previous: prevKey, next: nextKey });
+        void useConfigStore.getState().activateDirectory(state.currentDirectory);
     });
 }
