@@ -937,6 +937,7 @@ interface UIStore {
   agentControlToolEnabled: boolean;
   agentWebToolEnabled: boolean;
   agentMemoryToolEnabled: boolean;
+  hermesPlanGateDefault: boolean;
   /**
    * Whether this build has agent memory at all. Server-owned and not
    * persisted: an unreleased feature must not come back from a stale cache.
@@ -1135,6 +1136,7 @@ interface UIStore {
   setAgentControlToolEnabled: (value: boolean) => void;
   setAgentWebToolEnabled: (value: boolean) => void;
   setAgentMemoryToolEnabled: (value: boolean) => void;
+  setHermesPlanGateDefault: (value: boolean) => void;
   setAgentMemoryFeatureAvailable: (value: boolean) => void;
   markAgentMemoryViewed: (key: string, viewedAt: number) => void;
   setProjectContextSidebarWidth: (width: number) => void;
@@ -1308,6 +1310,7 @@ export const useUIStore = create<UIStore>()(
         agentControlToolEnabled: true,
         agentWebToolEnabled: true,
         agentMemoryToolEnabled: false,
+        hermesPlanGateDefault: false,
         agentMemoryFeatureAvailable: false,
         agentMemoryViewedAt: {},
         projectContextSidebarWidth: 168,
@@ -2574,6 +2577,9 @@ export const useUIStore = create<UIStore>()(
         },
         setAgentMemoryToolEnabled: (value) => {
           set({ agentMemoryToolEnabled: value });
+        },
+        setHermesPlanGateDefault: (value) => {
+          set({ hermesPlanGateDefault: value });
         },
         setAgentMemoryFeatureAvailable: (value) => {
           set({ agentMemoryFeatureAvailable: value });

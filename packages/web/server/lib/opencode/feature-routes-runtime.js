@@ -28,6 +28,7 @@ import { registerMarkdownImageGrantRoutes } from '../markdown-image-grants/route
 import { registerAgentActivityRoutes } from '../agent-activity/runtime.js';
 import { registerSessionSteerRoutes } from '../session-steer/runtime.js';
 import { registerPlanGateRoutes } from '../plan-gate/runtime.js';
+import { registerHermesIntegrationRoutes } from '../hermes-integration/routes.js';
 import { registerSkillRoutes } from './skill-routes.js';
 import { registerPluginRoutes } from './plugin-routes.js';
 import { getNpmInfo, clearCache as clearNpmCache } from './npm-registry.js';
@@ -145,6 +146,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       agentActivityRuntime,
       sessionSteerRuntime,
       planGateRuntime,
+      hermesIntegrationRuntime,
     } = routeDependencies;
 
     registerSettingsUtilityRoutes(app, {
@@ -215,6 +217,10 @@ export const createFeatureRoutesRuntime = (dependencies) => {
     registerAgentActivityRoutes(app, { getOpenChamberEventClients, writeSseEvent });
     registerSessionSteerRoutes(app, sessionSteerRuntime);
     registerPlanGateRoutes(app, planGateRuntime);
+
+    if (hermesIntegrationRuntime) {
+      registerHermesIntegrationRoutes(app, hermesIntegrationRuntime);
+    }
 
     registerMarkdownImageGrantRoutes(app, {
       fsPromises,

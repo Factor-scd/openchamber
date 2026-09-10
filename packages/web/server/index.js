@@ -95,6 +95,7 @@ import { createMessageQueueRuntime } from './lib/message-queue/runtime.js';
 import { createAgentActivityRuntime, registerAgentActivityRoutes } from './lib/agent-activity/runtime.js';
 import { createSessionSteerRuntime, registerSessionSteerRoutes } from './lib/session-steer/runtime.js';
 import { createPlanGateRuntime, registerPlanGateRoutes } from './lib/plan-gate/runtime.js';
+import { createHermesIntegrationRuntime } from './lib/hermes-integration/runtime.js';
 import { createGracefulShutdownRuntime } from './lib/opencode/shutdown-runtime.js';
 import { createProjectConfigRuntime } from './lib/projects/project-config.js';
 import { migrateLegacyUserDirs } from './lib/data-dir-migration.js';
@@ -950,6 +951,14 @@ const planGateRuntime = createPlanGateRuntime({
   broadcastGlobalUiEvent,
 });
 planGateRuntime.start();
+
+const hermesIntegrationRuntime = createHermesIntegrationRuntime({
+  agentActivityRuntime,
+  sessionSteerRuntime,
+  planGateRuntime,
+  readSettingsFromDiskMigrated,
+  startedAt: () => Date.now() - (Date.now() - process.uptime() * 1000),
+});
 
 const openCodeWatcherRuntime = createOpenCodeWatcherRuntime({
   waitForOpenCodePort: (...args) => waitForOpenCodePort(...args),
@@ -2013,6 +2022,7 @@ async function main(options = {}) {
     agentActivityRuntime,
     sessionSteerRuntime,
     planGateRuntime,
+    hermesIntegrationRuntime,
   });
 
   const startupPipelineResult = await startupPipelineRuntime.run({
