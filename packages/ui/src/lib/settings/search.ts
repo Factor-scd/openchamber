@@ -1086,6 +1086,14 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     keywords: ['linear', 'project', 'team', 'map', 'workspace', 'directory'],
     isAvailable: (ctx) => !ctx.isVSCode,
   },
+  {
+    id: 'integrations.hermes',
+    page: 'integrations',
+    titleKey: 'settings.integrations.hermes.title',
+    descriptionKey: 'settings.integrations.hermes.description',
+    keywords: ['hermes', 'agent', 'integration', 'plan gate', 'steer', 'activity'],
+    isAvailable: (ctx) => !ctx.isVSCode,
+  },
 ] as const;
 
 interface BuildSettingsSearchResultsOptions {

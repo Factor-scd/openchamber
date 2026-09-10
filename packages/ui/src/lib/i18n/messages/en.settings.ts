@@ -2367,5 +2367,5 @@ export const settingsDict = {
   'settings.openchamber.visual.field.inputHistoryLimitUnit': 'prompts',
   ...linearIntegrationI18n.en,
   'settings.page.integrations.title': 'Integrations',
-  'settings.page.integrations.description': 'Connect GitHub and Linear so OpenChamber can work with your issues and pull requests.',
+  'settings.page.integrations.description': 'Connect GitHub, Linear, and Hermes so OpenChamber can work with your issues, pull requests, and agent integrations.',
 } as const;
