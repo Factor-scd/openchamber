@@ -253,6 +253,9 @@
     "sttLanguage": {
       "scope": "profile"
     },
+    "sttCorrectTranscript": {
+      "scope": "profile"
+    },
     "tunnelProvider": {
       "scope": "instance"
     },
@@ -494,6 +497,13 @@
         "web",
         "desktop",
         "vscode"
+      ]
+    },
+    "sessionTabsPerWorkspace": {
+      "scope": "profile",
+      "surfaces": [
+        "web",
+        "desktop"
       ]
     },
     "allowPromptingSubagentSessions": {
@@ -853,10 +863,6 @@
       "local": true
     },
     "contextEditorTreeWidth": {
-      "scope": "device",
-      "local": true
-    },
-    "contextZoneSizes": {
       "scope": "device",
       "local": true
     },
