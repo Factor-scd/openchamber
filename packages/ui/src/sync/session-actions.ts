@@ -2012,8 +2012,6 @@ export async function optimisticSend(input: {
   ready?: Promise<void>
   appendSubmissions?: () => void
   onOptimisticInsert?: () => void
-  onMessageID?: (messageID: string) => void
-  beforeOptimisticInsert?: () => void
   /**
    * The actual API call. Receives the optimistic message id and the context
    * with its optimistic ids, so the server's records reconcile in place.
@@ -2035,7 +2033,6 @@ export async function optimisticSend(input: {
 
   assertRuntimeUnchanged()
   await waitForConnectionOrThrow()
-  input.beforeOptimisticInsert?.()
   assertRuntimeUnchanged()
   input.appendSubmissions?.()
 
@@ -2080,7 +2077,6 @@ export async function optimisticSend(input: {
     .filter((item) => item.text.trim())
     .map((item) => ({ ...item, id: ascendingId("msg") }))
   const messageID = ascendingId("msg")
-  input.onMessageID?.(messageID)
   const optimisticIDs = [...context.map((item) => item.id), messageID]
 
   // Part ids follow `partIds`, the same derivation the projection uses for the
