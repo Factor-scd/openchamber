@@ -672,7 +672,7 @@ describe('narrow provider association mutations', () => {
     const withoutSshUrl = createBindingService({ store: createBindingStore({ filePath: '/other.json', fsImpl }), resolveRepository: async () => sshContext });
     await expect(withoutSshUrl.mutateProvider({
       directory: '/repo', expectedRepositoryId: sshContext.repositoryId, expectedRevision: 0, operation: 'add', provider,
-    })).rejects.toMatchObject({ code: 'INVALID_SOURCE_CONTROL_BINDING' });
+    })).rejects.toMatchObject({ code: 'SOURCE_CONTROL_BINDING_SSH_ADDRESS_MISSING', status: 400 });
   });
 
   it('rejects provider writes when repository topology changes during validation', async () => {

@@ -287,6 +287,7 @@ describe('source-control auth storage', () => {
       { version: 4, providers: { gitlab: section, github: section, 'Not An Id': section } },
       { version: 4, providers: { gitlab: section, gitea: section } },
       { version: 4, providers: { gitlab: withSshUrl, github: section } },
+      { version: 6, providers: { gitlab: section, github: section } },
     ]) {
       await fs.writeFile(filePath, JSON.stringify(value), 'utf8');
       await expect(store.listInstances()).rejects.toMatchObject({ code: 'INVALID_SOURCE_CONTROL_AUTH' });
@@ -312,6 +313,27 @@ describe('source-control auth storage', () => {
     expect(JSON.parse(await fs.readFile(filePath, 'utf8'))).toEqual({
       version: 2, providers: { gitlab: { instances: {} } },
     });
+  });
+
+  it('round trips an SSH address on a GitHub Enterprise instance', async () => {
+    const { filePath, store } = await makeStore();
+    const host = 'github.example.com';
+    const sshUrl = 'ssh://ghe-ssh.example.com:2222';
+    await fs.writeFile(filePath, JSON.stringify({
+      version: 5,
+      providers: {
+        gitlab: { instances: {} },
+        github: { instances: { [host]: {
+          activeCredentialId: null, credentials: [], cliDisabled: false, cliActive: false, sshUrl,
+        } } },
+      },
+    }), 'utf8');
+
+    await store.github.setCliDisabled(host, true);
+
+    const written = JSON.parse(await fs.readFile(filePath, 'utf8'));
+    expect(written.version).toBe(5);
+    expect(written.providers.github.instances[host].sshUrl).toBe(sshUrl);
   });
 
   it('treats missing files as empty and rejects malformed or unsupported files without rewriting them', async () => {

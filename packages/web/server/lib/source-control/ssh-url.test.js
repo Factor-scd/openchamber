@@ -13,7 +13,7 @@ describe('provider SSH addresses', () => {
     expect(parseSshUrl(value)).toEqual(expected);
   });
 
-  it.each(['http://gitea.example.com', 'ssh://gitea.example.com/owner/repo', 'git@gitea.example.com:owner/repo.git', 'gitea.example.com:0', 'gitea.example.com:70000', 'not a host'])('does not parse %s', (value) => {
+  it.each(['http://gitea.example.com', 'git+ssh://gitea.example.com', 'ssh://gitea.example.com/owner/repo', 'git@gitea.example.com:owner/repo.git', 'gitea.example.com:0', 'gitea.example.com:70000', 'not a host'])('does not parse %s', (value) => {
     expect(parseSshUrl(value)).toBeNull();
   });
 

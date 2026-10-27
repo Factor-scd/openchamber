@@ -8,7 +8,7 @@ import type {
 } from '@/lib/api/types';
 import { identityTransport } from '@/lib/api/git-identity';
 import { getRuntimeKey } from '@/lib/runtime-switch';
-import { gitRemoteHost, instanceHost, type RemoteTraits } from './identity';
+import { instanceHost, sshInstanceTraits, type RemoteTraits } from './identity';
 import { repositoryBindingOwner } from './repository-binding';
 
 export type IdentityApplicability =
@@ -31,8 +31,10 @@ export const identityApplicability = (
   instanceSshHosts: Readonly<Record<string, string>> = {},
 ): IdentityApplicability => {
   const accountHost = identity.account ? instanceHost(identity.account.instance) : null;
-  const sshHost = identity.account ? gitRemoteHost(instanceSshHosts[identity.account.instance] ?? '') : null;
-  if (accountHost && remote.host && accountHost !== remote.host && sshHost !== remote.host) {
+  const ssh = identity.account ? sshInstanceTraits(instanceSshHosts[identity.account.instance] ?? '') : null;
+  const onInstanceSsh = Boolean(ssh && remote.ssh && !remote.https
+    && remote.host === ssh.host && (remote.sshPort ?? 22) === ssh.port);
+  if (accountHost && remote.host && accountHost !== remote.host && !onInstanceSsh) {
     return { applicable: false, reason: 'host', host: accountHost };
   }
   const transport = identityTransport(identity);

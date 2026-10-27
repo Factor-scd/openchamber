@@ -35,6 +35,13 @@ const providerOrigin = (provider, instance) => {
   return descriptor.instance.origin(instance);
 };
 
+const missingSshAddressError = () => {
+  const error = new Error('This remote is on a different SSH host. If the instance uses a separate SSH address, set it in Settings before editing the binding.');
+  error.code = 'SOURCE_CONTROL_BINDING_SSH_ADDRESS_MISSING';
+  error.status = 400;
+  return error;
+};
+
 const providerRepositoryForEndpoint = (provider, instance, endpoint, sshUrl = null) => {
   if (!isSafeRepositoryEndpoint(endpoint)) throw bindingInputError('provider endpoint is invalid');
   let normalized;
@@ -45,8 +52,11 @@ const providerRepositoryForEndpoint = (provider, instance, endpoint, sshUrl = nu
   const configuredSsh = parseSshUrl(sshUrl);
   const sshEndpointMatches = normalized.protocol === 'ssh' && configuredSsh !== null
     && normalized.host === configuredSsh.host && normalized.port === configuredSsh.port;
-  if (!sshEndpointMatches && (normalized.host !== origin.hostname.toLowerCase()
+  const sshEndpointMissing = normalized.protocol === 'ssh' && configuredSsh === null
+    && normalized.host !== origin.hostname.toLowerCase();
+  if (!sshEndpointMatches && (sshEndpointMissing || normalized.host !== origin.hostname.toLowerCase()
     || (normalized.protocol !== 'ssh' && normalized.port !== expectedPort))) {
+    if (sshEndpointMissing) throw missingSshAddressError();
     throw bindingInputError('provider instance does not match the selected remote host');
   }
   const descriptor = sourceControlProviderDescriptors.get(provider);

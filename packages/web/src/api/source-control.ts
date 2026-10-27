@@ -132,7 +132,6 @@ type ProviderAuthStatusDTO = SourceControlAuthStatus | {
   status?: undefined;
   accounts?: SourceControlAuthAccount[];
   cli?: DisconnectedSourceControlAuthStatus['cli'];
-  sshUrl?: string | null;
 };
 
 interface SourceUserDTO {
@@ -290,8 +289,8 @@ const normalizeIdentity = (identity: SourceControlIdentity): SourceControlIdenti
   const normalized = (providerInstances.get(identity.provider)?.format ?? 'origin') === 'host'
     ? normalizeHostInstance(identity)
     : normalizeOriginInstance(identity);
-  if (!identity.sshUrl?.trim()) return normalized;
-  return { ...normalized, sshUrl: identity.sshUrl.trim() };
+  if (!identity.instanceSshUrl?.trim()) return normalized;
+  return { ...normalized, instanceSshUrl: identity.instanceSshUrl.trim() };
 };
 
 const parseRepositoryContext = (payload: RepositoryContextDTO): SourceControlRepositoryContext => {
@@ -1154,10 +1153,6 @@ const parseAuthAccounts = (
 });
 
 const parseProviderAuthStatus = (payload: ProviderAuthStatusDTO, identity: SourceControlIdentity): SourceControlAuthStatus => {
-  const withSshUrl = <T extends SourceControlAuthStatus>(status: T): T => {
-    const sshUrl = identity.sshUrl ?? payload.sshUrl ?? undefined;
-    return sshUrl ? { ...status, sshUrl } : status;
-  };
   if (!payload.connected) {
     if (!payload.status) {
       const result: Extract<SourceControlAuthStatus, { status: 'disconnected' }> = {
@@ -1174,11 +1169,11 @@ const parseProviderAuthStatus = (payload: ProviderAuthStatusDTO, identity: Sourc
         };
       }
       result.accounts = parseAuthAccounts(payload.accounts, identity);
-      return withSshUrl(result);
+      return result;
     }
-    return withSshUrl({ ...payload, ...identity, connected: false, accounts: parseAuthAccounts(payload.accounts, identity) });
+    return { ...payload, ...identity, connected: false, accounts: parseAuthAccounts(payload.accounts, identity) };
   }
-  return withSshUrl({
+  return {
     ...identity,
     status: 'connected',
     connected: true,
@@ -1191,7 +1186,7 @@ const parseProviderAuthStatus = (payload: ProviderAuthStatusDTO, identity: Sourc
       active: payload.cli.active,
       user: payload.cli.user ? parseSourceUser(payload.cli.user, identity) : undefined,
     } : undefined,
-  });
+  };
 };
 
 export const createWebSourceControlAPI = (options: WebSourceControlAPIOptions = {}): SourceControlAPI => {

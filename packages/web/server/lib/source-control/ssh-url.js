@@ -20,7 +20,7 @@ export function parseSshUrl(value) {
   if (raw.includes('://')) {
     let url;
     try { url = new URL(raw); } catch { return null; }
-    if (!['ssh:', 'git+ssh:'].includes(url.protocol) || url.password || url.search || url.hash) return null;
+    if (url.protocol !== 'ssh:' || url.password || url.search || url.hash) return null;
     if (url.pathname && url.pathname !== '/') return null;
     const host = url.hostname.toLowerCase().replace(/\.$/, '');
     if (!host) return null;

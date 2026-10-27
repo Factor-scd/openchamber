@@ -5,6 +5,7 @@ import { isPlainObject, isString } from '../shared/guards.js';
 import { withSourceControlFileLock } from './file-lock.js';
 import { normalizeOriginInstance } from './origin-instance.js';
 import { isExtensionProviderId, isProviderId } from './provider-id.js';
+import { normalizeSshUrl } from './ssh-url.js';
 
 const AUTH_VERSION = 3;
 // Version 3 plus one origin-keyed section per further provider (Gitea and
@@ -12,7 +13,8 @@ const AUTH_VERSION = 3;
 const EXTRA_SECTIONS_VERSION = 4;
 // Version 4 plus an optional `sshUrl` on an origin-keyed instance, where a
 // provider's SSH clone host differs from its web address. Written only while
-// an instance holds one, so earlier releases can still read a file without it.
+// an instance holds one. An older build cannot read a file that carries one,
+// so the address is the only reason a file leaves version 4.
 const INSTANCE_SSH_URL_VERSION = 5;
 // The two sections every version-3 file carries; any other provider id is an
 // extra section.
@@ -102,8 +104,13 @@ function parseProviderInstances(rawInstances, { parseInstanceKey, parseCredentia
       || !Array.isArray(rawInstance.credentials)
       || Object.prototype.toString.call(rawInstance.cliDisabled) !== '[object Boolean]'
       || Object.prototype.toString.call(rawInstance.cliActive) !== '[object Boolean]'
-      || (rawInstance.cliDisabled && rawInstance.cliActive)
-      || (rawInstance.sshUrl !== undefined && !validText(rawInstance.sshUrl))) throw invalidState();
+      || (rawInstance.cliDisabled && rawInstance.cliActive)) throw invalidState();
+    if (rawInstance.sshUrl !== undefined) {
+      let normalized;
+      try { normalized = normalizeSshUrl(rawInstance.sshUrl); }
+      catch { throw invalidState(); }
+      if (normalized !== rawInstance.sshUrl) throw invalidState();
+    }
     const credentials = rawInstance.credentials.map((credential) => parseCredentialFor(credential, key));
     if (new Set(credentials.map((credential) => credential.credentialId)).size !== credentials.length) throw invalidState();
     if (rawInstance.activeCredentialId !== null
@@ -253,6 +260,7 @@ function serializeState(state) {
       cliDisabled: instance.cliDisabled,
       cliActive: instance.cliActive,
     };
+    if (instance.sshUrl) githubInstances[host].sshUrl = instance.sshUrl;
   }
   const extras = {};
   const parsedInstances = [instances, githubInstances];
@@ -448,6 +456,14 @@ export function createSourceControlAuthStore({ filePath, fsImpl = fs, lockWaitMs
    */
   const originSection = (provider) => Object.freeze({
     listInstances: () => read((state) => Object.keys(sectionInstances(state, provider))),
+    /** Every instance's separate SSH address, in one read. */
+    listSshUrls: () => read((state) => {
+      const urls = {};
+      for (const [origin, instance] of Object.entries(sectionInstances(state, provider))) {
+        if (instance.sshUrl) urls[origin] = instance.sshUrl;
+      }
+      return urls;
+    }),
     listAccounts: (origin) => read((state) => sectionInstances(state, provider)[origin]?.credentials ?? []),
     /**
      * Renews an OAuth credential now, whatever its expiry says. For a request

@@ -176,7 +176,7 @@ export function registerSourceControlRoutes(app, dependencies = {}) {
     const sshHosts = new Map(((await impl?.auth.listSshHosts?.()) ?? [])
       .map((entry) => [entry.instance, entry.sshUrl]));
     return [...new Set([...defaults, ...known])]
-      .map((instance) => ({ provider: descriptor.id, instance, ...(sshHosts.has(instance) ? { sshUrl: sshHosts.get(instance) } : {}) }));
+      .map((instance) => ({ provider: descriptor.id, instance, ...(sshHosts.has(instance) ? { instanceSshUrl: sshHosts.get(instance) } : {}) }));
   };
   app.get('/api/source-control/providers', (_req, res) => {
     // Built-ins in priority order, then extension providers sorted by id

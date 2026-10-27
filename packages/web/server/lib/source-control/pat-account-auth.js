@@ -101,26 +101,24 @@ export function createPatAccountAuth({
     return false;
   };
 
-  const withSshUrl = (status, instance) => (instance.sshUrl ? { ...status, sshUrl: instance.sshUrl } : status);
-
   const buildStatus = async (origin) => {
     const instance = await store.readInstance(origin);
     const active = instance.accounts.find((account) => account.id === instance.activeAccountId && account.status !== 'invalid') ?? null;
     const accounts = instance.accounts.map((account) => accountView(origin, account, Boolean(active && account.id === active.id), instance.accounts));
-    if (!active) return withSshUrl({ provider: descriptor.id, instance: origin, status: 'disconnected', connected: false, accounts }, instance);
+    if (!active) return { provider: descriptor.id, instance: origin, status: 'disconnected', connected: false, accounts };
     try {
       const user = await verifyAccount(origin, active);
-      return withSshUrl({
+      return {
         provider: descriptor.id, instance: origin, status: 'connected', connected: true,
         user: { ...user, provider: descriptor.id, instance: origin }, scope: active.scope, accounts,
-      }, instance);
+      };
     } catch (error) {
       const failure = classifyFailure(error);
       if (failure === 'invalid-token') {
         await invalidateAccount({ instance: origin, accountId: active.id });
         return buildStatus(origin);
       }
-      return withSshUrl({ provider: descriptor.id, instance: origin, status: failure, connected: false, message: error?.message, accounts }, instance);
+      return { provider: descriptor.id, instance: origin, status: failure, connected: false, message: error?.message, accounts };
     }
   };
 
@@ -227,6 +225,9 @@ export function createPatAccountAuth({
     /** Every instance with a separate SSH address, for recognising remotes on it. */
     listSshHosts: async () => {
       if (!takesSshUrl) return [];
+      if (store.listSshUrls instanceof Function) {
+        return Object.entries(await store.listSshUrls()).map(([instance, sshUrl]) => ({ instance, sshUrl }));
+      }
       const hosts = [];
       for (const origin of (await store.listInstances?.()) ?? []) {
         const sshUrl = (await store.readInstance(origin)).sshUrl;

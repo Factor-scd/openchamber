@@ -23,6 +23,7 @@ import { useSourceControlAuthEntry, useSourceControlAuthStore } from '@/stores/u
 import { getRuntimeKey, subscribeRuntimeEndpointWillChange } from '@/lib/runtime-switch';
 import { SourceControlAccountList } from './SourceControlAccountList';
 import { DeviceFlowCode } from './DeviceFlowCode';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { asksForUsername, providerSettingsCopy, tokenCreationUrl } from './sourceControlProviderSettings';
 
 /** The ways to add an account in the form; the CLI login has its own row. */
@@ -52,6 +53,7 @@ interface ProviderInstanceAccountsProps {
  */
 export const ProviderInstanceAccounts: React.FC<ProviderInstanceAccountsProps> = ({ descriptor, identity, sourceControl, onSaved }) => {
   const { t } = useI18n();
+  const sshUrlConfirm = useConfirmDialog();
   const copy = providerSettingsCopy(descriptor);
   const provider = descriptor.label;
   const cliName = descriptor.auth.cliName ?? '';
@@ -67,7 +69,7 @@ export const ProviderInstanceAccounts: React.FC<ProviderInstanceAccountsProps> =
   const [pollAttempt, setPollAttempt] = React.useState(0);
   const [token, setToken] = React.useState('');
   const [username, setUsername] = React.useState('');
-  const [sshUrl, setSshUrl] = React.useState(identity.sshUrl ?? '');
+  const [sshUrl, setSshUrl] = React.useState(identity.instanceSshUrl ?? '');
   const [sshUrlFailed, setSshUrlFailed] = React.useState(false);
   const [sshUrlInvalid, setSshUrlInvalid] = React.useState(false);
   const [savingSshUrl, setSavingSshUrl] = React.useState(false);
@@ -111,10 +113,10 @@ export const ProviderInstanceAccounts: React.FC<ProviderInstanceAccountsProps> =
   }, [stopFlow]);
   React.useEffect(() => stopFlow(), [identity.instance, identity.provider, stopFlow]);
   React.useEffect(() => {
-    setSshUrl(identity.sshUrl ?? '');
+    setSshUrl(identity.instanceSshUrl ?? '');
     setSshUrlFailed(false);
     setSshUrlInvalid(false);
-  }, [identity.instance, identity.provider, identity.sshUrl]);
+  }, [identity.instance, identity.provider, identity.instanceSshUrl]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -229,6 +231,15 @@ export const ProviderInstanceAccounts: React.FC<ProviderInstanceAccountsProps> =
 
   const saveSshUrl = async () => {
     if (!takesSshUrl) return;
+    if (!sshUrl.trim() && identity.instanceSshUrl) {
+      const confirmed = await sshUrlConfirm.confirm({
+        title: t('settings.sourceControl.field.sshUrl.clearTitle'),
+        message: t('settings.sourceControl.field.sshUrl.clearMessage'),
+        action: t('settings.sourceControl.field.sshUrl.clearAction'),
+        destructive: true,
+      });
+      if (!confirmed) return;
+    }
     const isCurrentRuntime = captureRuntime();
     setBusy(true);
     setSavingSshUrl(true);
@@ -400,7 +411,7 @@ export const ProviderInstanceAccounts: React.FC<ProviderInstanceAccountsProps> =
               className="w-full @xl:w-auto"
               size="sm"
               onClick={() => void saveSshUrl()}
-              disabled={busy || savingSshUrl || sshUrl.trim() === (identity.sshUrl ?? '')}
+              disabled={busy || savingSshUrl || sshUrl.trim() === (identity.instanceSshUrl ?? '')}
             >
               {t('settings.common.actions.saveChanges')}
             </Button>
@@ -550,6 +561,7 @@ export const ProviderInstanceAccounts: React.FC<ProviderInstanceAccountsProps> =
           </SettingsFieldRow>
         </div>
       )}
+      {sshUrlConfirm.dialog}
     </div>
   );
 };

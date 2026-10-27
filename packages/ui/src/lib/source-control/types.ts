@@ -10,8 +10,9 @@ export interface SourceControlIdentity {
   /**
    * The instance's separate SSH address, where its Git SSH host is not its web
    * address (`SSH_DOMAIN`). Remotes there are recognised as this instance.
+   * Named apart from a repository's own `sshUrl` clone address.
    */
-  sshUrl?: string;
+  instanceSshUrl?: string;
 }
 
 export interface SourceControlRepositoryEndpoint {

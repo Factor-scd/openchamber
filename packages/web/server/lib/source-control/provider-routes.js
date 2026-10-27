@@ -615,13 +615,17 @@ export function registerProviderRoutes(app, {
       try {
         impl = await loadImplementation(id);
         if (!takesSshUrl || !(impl.auth.setSshUrl instanceof Function)) return unsupportedCapability(res);
-        const instance = requestInstance(req);
+        let instance;
+        try { instance = requestInstance(req); }
+        catch (error) { return res.status(400).json({ error: error.message }); }
         const value = req.body?.sshUrl;
         if (value !== undefined && value !== null && !isString(value)) {
           return res.status(400).json({ error: 'sshUrl must be a string' });
         }
-        return res.json(await impl.auth.setSshUrl({ instance, sshUrl: isString(value) ? value : '' }));
+        return res.json(await impl.auth.setSshUrl({ instance, sshUrl: isString(value) ? value : null }));
       } catch (error) {
+        const lockResponse = sendAuthStorageError(res, error);
+        if (lockResponse) return lockResponse;
         const answered = sendProviderResponse(res, error);
         if (answered) return answered;
         const kind = impl ? impl.classifyFailure(error) : 'provider-error';
