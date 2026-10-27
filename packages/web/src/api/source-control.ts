@@ -132,6 +132,7 @@ type ProviderAuthStatusDTO = SourceControlAuthStatus | {
   status?: undefined;
   accounts?: SourceControlAuthAccount[];
   cli?: DisconnectedSourceControlAuthStatus['cli'];
+  sshUrl?: string | null;
 };
 
 interface SourceUserDTO {
@@ -197,6 +198,7 @@ type SourceControlFetch = (input: string, init?: RuntimeFetchOptions) => Promise
 type PostBody =
   | { flowId: string }
   | { token: string; username?: string }
+  | { sshUrl: string | null }
   | { accountId: string }
   | { disabled: boolean }
   | CreateBody
@@ -284,11 +286,13 @@ const normalizeHostInstance = (identity: SourceControlIdentity): SourceControlId
   return { provider: identity.provider, instance: host };
 };
 
-const normalizeIdentity = (identity: SourceControlIdentity): SourceControlIdentity => (
-  (providerInstances.get(identity.provider)?.format ?? 'origin') === 'host'
+const normalizeIdentity = (identity: SourceControlIdentity): SourceControlIdentity => {
+  const normalized = (providerInstances.get(identity.provider)?.format ?? 'origin') === 'host'
     ? normalizeHostInstance(identity)
-    : normalizeOriginInstance(identity)
-);
+    : normalizeOriginInstance(identity);
+  if (!identity.sshUrl?.trim()) return normalized;
+  return { ...normalized, sshUrl: identity.sshUrl.trim() };
+};
 
 const parseRepositoryContext = (payload: RepositoryContextDTO): SourceControlRepositoryContext => {
   if (!payload || !isStringValue(payload.repositoryId) || !payload.repositoryId
@@ -1150,6 +1154,10 @@ const parseAuthAccounts = (
 });
 
 const parseProviderAuthStatus = (payload: ProviderAuthStatusDTO, identity: SourceControlIdentity): SourceControlAuthStatus => {
+  const withSshUrl = <T extends SourceControlAuthStatus>(status: T): T => {
+    const sshUrl = identity.sshUrl ?? payload.sshUrl ?? undefined;
+    return sshUrl ? { ...status, sshUrl } : status;
+  };
   if (!payload.connected) {
     if (!payload.status) {
       const result: Extract<SourceControlAuthStatus, { status: 'disconnected' }> = {
@@ -1166,11 +1174,11 @@ const parseProviderAuthStatus = (payload: ProviderAuthStatusDTO, identity: Sourc
         };
       }
       result.accounts = parseAuthAccounts(payload.accounts, identity);
-      return result;
+      return withSshUrl(result);
     }
-    return { ...payload, ...identity, connected: false, accounts: parseAuthAccounts(payload.accounts, identity) };
+    return withSshUrl({ ...payload, ...identity, connected: false, accounts: parseAuthAccounts(payload.accounts, identity) });
   }
-  return {
+  return withSshUrl({
     ...identity,
     status: 'connected',
     connected: true,
@@ -1183,7 +1191,7 @@ const parseProviderAuthStatus = (payload: ProviderAuthStatusDTO, identity: Sourc
       active: payload.cli.active,
       user: payload.cli.user ? parseSourceUser(payload.cli.user, identity) : undefined,
     } : undefined,
-  };
+  });
 };
 
 export const createWebSourceControlAPI = (options: WebSourceControlAPIOptions = {}): SourceControlAPI => {
@@ -1298,6 +1306,14 @@ export const createWebSourceControlAPI = (options: WebSourceControlAPIOptions = 
       const normalized = normalizeIdentity(identity);
       await post<ErrorResponse>(fetch, normalized, '/auth/token', tokenOptions?.username ? { token, username: tokenOptions.username } : { token });
       return parseProviderAuthStatus(await request<ProviderAuthStatusDTO & ErrorResponse>(fetch, normalized, '/auth/status'), normalized);
+    },
+    authSetSshUrl: async (identity, sshUrl) => {
+      const normalized = normalizeIdentity(identity);
+      const payload = await post<{ sshUrl?: string | null; error?: string }>(fetch, normalized, '/auth/ssh-url', { sshUrl });
+      if (payload.sshUrl !== null && !isNonEmptyString(payload.sshUrl)) {
+        throw new Error('Source control response contained an invalid SSH URL');
+      }
+      return { sshUrl: payload.sshUrl ?? null };
     },
     authDisconnect: async (identity, accountId) => {
       if (!isNonEmptyString(accountId) || accountId.trim() !== accountId) {

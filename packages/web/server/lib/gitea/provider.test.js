@@ -142,6 +142,23 @@ describe('Gitea provider authentication', () => {
     expect(session).toMatchObject({ instance: ORIGIN, providerUserId: `${ORIGIN}#1`, secretKind: 'pat' });
   });
 
+  it('stores the instance\'s separate SSH address and recognises remotes there', async () => {
+    const { impl, store } = await setup();
+
+    await expect(impl.auth.setSshUrl({ instance: ORIGIN, sshUrl: 'ssh://git@giteassh.example.com:2222' }))
+      .resolves.toEqual({ sshUrl: 'ssh://giteassh.example.com:2222' });
+    expect(await store.readInstance(ORIGIN)).toMatchObject({ sshUrl: 'ssh://giteassh.example.com:2222' });
+    await expect(impl.auth.readSshUrl({ instance: ORIGIN })).resolves.toBe('ssh://giteassh.example.com:2222');
+    await expect(impl.auth.listSshHosts()).resolves.toEqual([{ instance: ORIGIN, sshUrl: 'ssh://giteassh.example.com:2222' }]);
+    expect(impl.auth.ownsHost({
+      host: 'giteassh.example.com', port: 2222, knownInstances: [ORIGIN],
+      knownSshHosts: [{ instance: ORIGIN, sshUrl: 'ssh://giteassh.example.com:2222' }],
+    })).toBe(ORIGIN);
+
+    await expect(impl.auth.setSshUrl({ instance: ORIGIN, sshUrl: 'https://giteassh.example.com' }))
+      .rejects.toMatchObject({ sourceControlResponse: { status: 400 } });
+  });
+
   it('owns only hosts of instances it knows', async () => {
     const { impl } = await setup();
     expect(impl.auth.ownsHost({ host: 'gitea.example.com', knownInstances: [ORIGIN] })).toBe(ORIGIN);
@@ -231,6 +248,20 @@ describe('Gitea in the registry (smoke)', () => {
 
     const instances = await request(app).get('/api/source-control/instances');
     expect(instances.body.instances.filter((entry) => entry.provider === 'gitea')).toEqual([]);
+
+    const saved = await request(app).post('/api/source-control/gitea/auth/ssh-url')
+      .query({ instance: 'https://gitea.example.com' })
+      .send({ sshUrl: 'ssh://git@giteassh.example.com:2222' });
+    expect(saved.status).toBe(200);
+    expect(saved.body).toEqual({ sshUrl: 'ssh://giteassh.example.com:2222' });
+    const withSsh = await request(app).get('/api/source-control/instances');
+    expect(withSsh.body.instances).toContainEqual({
+      provider: 'gitea', instance: 'https://gitea.example.com', sshUrl: 'ssh://giteassh.example.com:2222',
+    });
+    const refused = await request(app).post('/api/source-control/gitea/auth/ssh-url')
+      .query({ instance: 'https://gitea.example.com' })
+      .send({ sshUrl: 'https://giteassh.example.com' });
+    expect(refused.status).toBe(400);
   });
 });
 

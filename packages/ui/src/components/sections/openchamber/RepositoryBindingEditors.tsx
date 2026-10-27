@@ -2,6 +2,7 @@ import React from 'react';
 import {
   identityAccountConnected,
   instanceHost,
+  instanceSshHostsFrom,
   remoteTraits,
   selectableIdentities,
   type RemoteTraits,
@@ -100,6 +101,8 @@ export const AdditionalRemoteGrants: React.FC<SourceControlBindingSettingsProps>
   const globalGitIdentity = useGitIdentitiesStore((state) => state.globalIdentity);
   const connectedAccountIds = useConnectedAccountIds();
   const refreshIdentityAccounts = useSourceControlAuthStore((state) => state.refreshIdentityAccounts);
+  const sourceControlIdentities = useSourceControlAuthStore((state) => state.identities);
+  const instanceSshHosts = React.useMemo(() => instanceSshHostsFrom(sourceControlIdentities), [sourceControlIdentities]);
   const [pending, setPending] = React.useState('');
   const [error, setError] = React.useState(false);
   const requestRef = React.useRef(0);
@@ -169,7 +172,7 @@ export const AdditionalRemoteGrants: React.FC<SourceControlBindingSettingsProps>
               identities={identities}
               onSelect={(profile) => void grant(remote.name, profile)}
               isApplying={pending === remote.name}
-              applicability={(profile) => identityApplicability(profile, traits)}
+              applicability={(profile) => identityApplicability(profile, traits, instanceSshHosts)}
               triggerClassName="shrink-0 border border-border"
               onOpen={() => void refreshIdentityAccounts(sourceControl, gitIdentityProfiles.map((profile) => profile.account))}
             />
@@ -199,6 +202,8 @@ export const AuxiliaryBindingSettings: React.FC<SourceControlBindingSettingsProp
   const loadGlobalGitIdentity = useGitIdentitiesStore((state) => state.loadGlobalIdentity);
   const connectedAccountIds = useConnectedAccountIds();
   const refreshIdentityAccounts = useSourceControlAuthStore((state) => state.refreshIdentityAccounts);
+  const sourceControlIdentities = useSourceControlAuthStore((state) => state.identities);
+  const instanceSshHosts = React.useMemo(() => instanceSshHostsFrom(sourceControlIdentities), [sourceControlIdentities]);
   const repositoryAuthor = useGitIdentity(directory);
   const latest = recovery.entry?.reads.at(-1)?.operation;
   const requirements = latest?.target.operation === 'checkout-hydration'
@@ -242,7 +247,7 @@ export const AuxiliaryBindingSettings: React.FC<SourceControlBindingSettingsProp
   const endpointUrl = selected?.endpoint.displayUrl ?? '';
   const endpoint = React.useMemo((): RemoteTraits | null => endpointUrl ? remoteTraits(endpointUrl) : null, [endpointUrl]);
   const applicabilityOf = React.useCallback((identity: GitIdentityProfile): IdentityApplicability =>
-    endpoint ? identityApplicability(identity, endpoint) : { applicable: true }, [endpoint]);
+    endpoint ? identityApplicability(identity, endpoint, instanceSshHosts) : { applicable: true }, [endpoint, instanceSshHosts]);
 
   /**
    * The identity this endpoint is proposed with.

@@ -78,6 +78,7 @@ describe('SourceControlProviderCard', () => {
   const globals = new Map<string, PropertyDescriptor | undefined>();
   const savedInstances = new Set<string>();
   const savedTokens: Array<[string, string]> = [];
+  const savedSshUrls: Array<[string, string | null]> = [];
   let instanceReads = 0;
   let activationFails = false;
   let discoveryFails = false;
@@ -137,6 +138,10 @@ describe('SourceControlProviderCard', () => {
       if (tokenOwner) throw new SourceControlInstanceOtherProviderError(`${identity.instance} belongs on another card`, tokenOwner);
       savedTokens.push([identity.instance, token]);
       return statusFor(identity);
+    },
+    authSetSshUrl: async (identity, sshUrl) => {
+      savedSshUrls.push([identity.instance, sshUrl]);
+      return { sshUrl };
     },
     providers: unexpected, repositoryContext: unexpected, repositoryBinding: unexpected, resetRepositoryBinding: unexpected,
     repositoryProviderBindingMutate: unexpected, authStart: unexpected, authComplete: unexpected,
@@ -508,5 +513,21 @@ describe('SourceControlProviderCard', () => {
       await mount({ ...gitlab, auth: { ...gitlab.auth, methods: ['device', 'pat'], cliName: undefined } });
       expect(buttonLabels()).not.toContain('Enable glab');
     });
+  });
+
+  test('saves an instance SSH address where the descriptor asks for one', async () => {
+    const base = acmeDescriptor();
+    const descriptor = acmeDescriptor({
+      settings: { fields: [base.settings.fields[0], { id: 'sshUrl', kind: 'instance-url', secret: false }, base.settings.fields[1]] },
+    });
+    await mount(descriptor);
+    await addInstance('https://forge.example.com', 'https://forge.example.com');
+
+    const input = container.querySelector<HTMLInputElement>('input[aria-label="SSH URL"]');
+    if (!input) throw new Error('Missing SSH URL input');
+    await type(input, 'ssh://git@forge-ssh.example.com:2222');
+    await click('Save changes');
+
+    expect(savedSshUrls).toEqual([['https://forge.example.com', 'ssh://git@forge-ssh.example.com:2222']]);
   });
 });

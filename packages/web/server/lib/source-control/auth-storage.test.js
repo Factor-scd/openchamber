@@ -278,16 +278,40 @@ describe('source-control auth storage', () => {
   it('refuses a version 3 file with an extra section and a version 4 file with an invalid id or a missing built-in section', async () => {
     const { filePath, store } = await makeStore();
     const section = { instances: {} };
+    const origin = 'https://gitlab.example.com';
+    const withSshUrl = { instances: { [origin]: {
+      activeCredentialId: null, credentials: [], cliDisabled: false, cliActive: false, sshUrl: 'ssh://git.example.com',
+    } } };
     for (const value of [
       { version: 3, providers: { gitlab: section, github: section, gitea: section } },
       { version: 4, providers: { gitlab: section, github: section, 'Not An Id': section } },
       { version: 4, providers: { gitlab: section, gitea: section } },
-      { version: 5, providers: { gitlab: section, github: section } },
+      { version: 4, providers: { gitlab: withSshUrl, github: section } },
     ]) {
       await fs.writeFile(filePath, JSON.stringify(value), 'utf8');
       await expect(store.listInstances()).rejects.toMatchObject({ code: 'INVALID_SOURCE_CONTROL_AUTH' });
       expect(JSON.parse(await fs.readFile(filePath, 'utf8'))).toEqual(value);
     }
+  });
+
+  it('stores an instance SSH URL in a version 5 file and keeps it without accounts', async () => {
+    const { filePath, store } = await makeStore();
+    const origin = 'https://gitlab.example.com';
+
+    await expect(store.setSshUrl(origin, 'ssh://git.example.com:2222')).resolves.toBe('ssh://git.example.com:2222');
+    expect(JSON.parse(await fs.readFile(filePath, 'utf8'))).toEqual({
+      version: 5,
+      providers: { gitlab: { instances: { [origin]: {
+        activeCredentialId: null, credentials: [], cliDisabled: false, cliActive: false, sshUrl: 'ssh://git.example.com:2222',
+      } } }, github: { instances: {} } },
+    });
+    await expect(store.readInstance(origin)).resolves.toMatchObject({ sshUrl: 'ssh://git.example.com:2222', accounts: [] });
+
+    await expect(store.setSshUrl(origin, 'ssh://git.example.com')).resolves.toBe('ssh://git.example.com');
+    await expect(store.setSshUrl(origin, null)).resolves.toBeNull();
+    expect(JSON.parse(await fs.readFile(filePath, 'utf8'))).toEqual({
+      version: 2, providers: { gitlab: { instances: {} } },
+    });
   });
 
   it('treats missing files as empty and rejects malformed or unsupported files without rewriting them', async () => {

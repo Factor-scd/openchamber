@@ -1,6 +1,7 @@
 import { getRemotes, getStatus } from '../git/index.js';
 import { isString } from '../shared/guards.js';
 import { normalizeGiteaInstance } from './instance.js';
+import { parseSshUrl, sshHostMatches } from '../source-control/ssh-url.js';
 
 const SEGMENT = /^[A-Za-z0-9_.-]+$/;
 
@@ -17,18 +18,26 @@ const matchScpRemote = (value) => (value.includes('://') ? null : value.match(/^
  * The repository a remote URL names on one known instance, or null. HTTPS
  * remotes match the instance's exact authority (host and port); HTTP only
  * when the instance itself is a loopback HTTP origin. SSH remotes match its
- * hostname: an instance whose SSH host differs from its web host
- * (`SSH_DOMAIN`) is not recognized over SSH.
+ * hostname, or the instance's separate SSH address (`sshUrl`) when one is
+ * configured: Gitea sets `SSH_DOMAIN` apart from the web address, often on a
+ * different host or port.
  */
-export function parseGiteaRemoteUrl(raw, instance) {
+export function parseGiteaRemoteUrl(raw, instance, { sshUrl = null } = {}) {
   if (!isString(raw) || !raw.trim()) return null;
   const origin = normalizeGiteaInstance(instance);
   const originUrl = new URL(origin);
+  const configuredSsh = parseSshUrl(sshUrl);
   const value = raw.trim();
   const build = (path) => (path ? { ...path, repoPath: `${path.owner}/${path.name}`, url: `${origin}/${path.owner}/${path.name}` } : null);
+  const sshHostMatchesRemote = (host, port) => host === originUrl.hostname.toLowerCase()
+    || (configuredSsh !== null && sshHostMatches(sshUrl, host, port));
 
   const scpMatch = matchScpRemote(value);
-  if (scpMatch) return scpMatch[1].toLowerCase() === originUrl.hostname.toLowerCase() ? build(repositoryPath(scpMatch[2])) : null;
+  if (scpMatch) {
+    return sshHostMatchesRemote(scpMatch[1].toLowerCase(), 22)
+      ? build(repositoryPath(scpMatch[2]))
+      : null;
+  }
 
   let url;
   try {
@@ -41,7 +50,7 @@ export function parseGiteaRemoteUrl(raw, instance) {
   const web = url.protocol === 'http:' || url.protocol === 'https:';
   const hostMatches = web
     ? url.host.toLowerCase() === originUrl.host.toLowerCase()
-    : url.hostname.toLowerCase() === originUrl.hostname.toLowerCase();
+    : sshHostMatchesRemote(url.hostname.toLowerCase(), Number(url.port || 22));
   if (!hostMatches || (web && (url.username || url.password)) || url.search || url.hash) return null;
   return build(repositoryPath(decodeURIComponent(url.pathname)));
 }
@@ -61,8 +70,9 @@ const trackingRemoteName = (tracking) => {
 export async function resolveGiteaReposFromDirectory(directory, instance, explicitRemote, dependencies = {}) {
   const loadRemotes = dependencies.getRemotes ?? getRemotes;
   const loadStatus = dependencies.getStatus ?? getStatus;
-  const parseRemote = (remote) => parseGiteaRemoteUrl(remote.pushUrl || remote.fetchUrl, instance)
-    ?? parseGiteaRemoteUrl(remote.fetchUrl, instance);
+  const options = { sshUrl: dependencies.sshUrl ?? null };
+  const parseRemote = (remote) => parseGiteaRemoteUrl(remote.pushUrl || remote.fetchUrl, instance, options)
+    ?? parseGiteaRemoteUrl(remote.fetchUrl, instance, options);
   const remotes = await loadRemotes(directory);
   if (explicitRemote) {
     const remote = remotes.find((candidate) => candidate?.name === explicitRemote);

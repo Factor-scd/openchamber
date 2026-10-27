@@ -84,6 +84,18 @@ describe('identityApplicability', () => {
       .toEqual({ applicable: false, reason: 'host', host: 'private.gitlab.example' });
   });
 
+  test('an instance with a separate SSH address serves remotes there', () => {
+    const gitea = { provider: 'gitea', instance: 'https://gitea.example.com', accountId: 'a' } as const;
+    const separateSsh = { host: 'giteassh.example.com', https: false, ssh: true };
+    const hosts = { 'https://gitea.example.com': 'ssh://giteassh.example.com' };
+    expect(identityApplicability(identity({ account: gitea, transport: 'ssh', sshCredentialId: 'k' }), separateSsh, hosts))
+      .toEqual({ applicable: true });
+    expect(identityApplicability(identity({ account: gitea, transport: 'account' }), separateSsh, hosts))
+      .toEqual({ applicable: false, reason: 'scheme', scheme: 'https' });
+    expect(identityApplicability(identity({ account: gitea, transport: 'ssh', sshCredentialId: 'k' }), { ...separateSsh, host: 'elsewhere.example' }, hosts))
+      .toEqual({ applicable: false, reason: 'host', host: 'gitea.example.com' });
+  });
+
   test('a transport has to reach the address', () => {
     expect(identityApplicability(identity({ account: gitlabCom, transport: 'account' }), ssh))
       .toEqual({ applicable: false, reason: 'scheme', scheme: 'https' });

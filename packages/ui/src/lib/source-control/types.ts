@@ -7,6 +7,11 @@ export interface SourceControlIdentity {
   provider: SourceControlProvider;
   /** Stable provider installation or host identifier, such as `github.com`. */
   instance: string;
+  /**
+   * The instance's separate SSH address, where its Git SSH host is not its web
+   * address (`SSH_DOMAIN`). Remotes there are recognised as this instance.
+   */
+  sshUrl?: string;
 }
 
 export interface SourceControlRepositoryEndpoint {

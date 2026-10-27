@@ -26,6 +26,17 @@ describe('Gitea remotes', () => {
     expect(parseGiteaRemoteUrl('http://localhost:3000/alice/app.git', 'http://localhost:3000')?.repoPath).toBe('alice/app');
   });
 
+  it('reads SSH remotes on the instance\'s separate SSH address', () => {
+    const options = { sshUrl: 'ssh://git@giteassh.example.com:2222' };
+    expect(parseGiteaRemoteUrl('ssh://git@giteassh.example.com:2222/alice/app.git', origin, options)?.repoPath).toBe('alice/app');
+    expect(parseGiteaRemoteUrl('ssh://giteassh.example.com:2222/alice/app.git', origin, options)?.repoPath).toBe('alice/app');
+    expect(parseGiteaRemoteUrl('git@giteassh.example.com:alice/app.git', origin, options)).toBeNull();
+    expect(parseGiteaRemoteUrl('ssh://git@giteassh.example.com:2200/alice/app.git', origin, options)).toBeNull();
+    expect(parseGiteaRemoteUrl('ssh://git@elsewhere.example.com:2222/alice/app.git', origin, options)).toBeNull();
+    expect(parseGiteaRemoteUrl('ssh://git@giteassh.example.com/alice/app.git', origin, { sshUrl: 'ssh://giteassh.example.com' })?.repoPath).toBe('alice/app');
+    expect(parseGiteaRemoteUrl('git@giteassh.example.com:alice/app.git', origin, { sshUrl: 'giteassh.example.com' })?.repoPath).toBe('alice/app');
+  });
+
   it('reads only the named remote when one is given', async () => {
     const remotes = [
       { name: 'origin', fetchUrl: `${origin}/alice/app.git` },
@@ -37,5 +48,15 @@ describe('Gitea remotes', () => {
       getRemotes: async () => remotes, getStatus: async () => ({ tracking: 'upstream/main' }),
     });
     expect(ranked.repos.map((repo) => repo.remoteName)).toEqual(['upstream', 'origin']);
+  });
+
+  it('resolves a remote on the instance\'s separate SSH address', async () => {
+    const remotes = [{ name: 'origin', fetchUrl: 'git@giteassh.example.com:alice/app.git' }];
+    const resolved = await resolveGiteaReposFromDirectory('/repo', origin, '', {
+      getRemotes: async () => remotes,
+      getStatus: async () => ({ tracking: '' }),
+      sshUrl: 'ssh://giteassh.example.com',
+    });
+    expect(resolved.repos).toEqual([expect.objectContaining({ repoPath: 'alice/app', remoteName: 'origin' })]);
   });
 });

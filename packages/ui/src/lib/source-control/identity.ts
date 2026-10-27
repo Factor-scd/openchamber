@@ -35,6 +35,16 @@ const getIdentityAuthority = (identity: SourceControlIdentity): string => {
   }
 };
 
+/** The authorities a provider instance answers on: its web address and its separate SSH address, if it has one. */
+const getIdentityAuthorities = (identity: SourceControlIdentity): string[] => {
+  const authorities = [getIdentityAuthority(identity)];
+  if (identity.sshUrl) {
+    const sshAuthority = getRemoteAuthority({ name: '', fetchUrl: identity.sshUrl, pushUrl: identity.sshUrl });
+    if (sshAuthority && !authorities.includes(sshAuthority)) authorities.push(sshAuthority);
+  }
+  return authorities;
+};
+
 type SourceControlTarget = {
   identity: SourceControlIdentity;
   remote: GitRemote;
@@ -147,7 +157,7 @@ export const resolveSourceControlTarget = (
   for (const remote of remotes) {
     const authority = getRemoteAuthority(remote);
     if (!authority) continue;
-    const identity = identities.find((candidate) => getIdentityAuthority(candidate) === authority);
+    const identity = identities.find((candidate) => getIdentityAuthorities(candidate).includes(authority));
     if (identity) targets.push({ identity, remote });
   }
   return targets.length === 1 ? targets[0] : null;
@@ -225,6 +235,13 @@ export const remoteTraits = (remoteUrl: string): RemoteTraits => {
 /** The host a provider instance names, whether stored bare or as a URL. */
 export const instanceHost = (instance: string): string | null =>
   gitRemoteHost(instance.includes('://') ? instance : `https://${instance}`);
+
+/** Each provider instance's separate SSH address, keyed by instance, for the identity pickers. */
+export const instanceSshHostsFrom = (
+  identities: readonly SourceControlIdentity[],
+): Record<string, string> => Object.fromEntries(
+  identities.flatMap((identity) => (identity.sshUrl ? [[identity.instance, identity.sshUrl]] : [])),
+);
 
 /**
  * The identity to offer for a repository on this host.
@@ -329,11 +346,14 @@ export const proposeIdentityForHost = <T extends { id: string; account?: { insta
   identities: T[],
   host: string | null,
   defaultIdentityId?: string | null,
+  instanceSshHosts: Readonly<Record<string, string>> = {},
 ): T | null => {
   const matching = host
     ? identities.find((identity) => {
       const instance = identity.account?.instance ?? '';
-      return instance.length > 0 && instanceHost(instance) === host;
+      if (!instance) return false;
+      return instanceHost(instance) === host
+        || gitRemoteHost(instanceSshHosts[instance] ?? '') === host;
     })
     : undefined;
   if (matching) return matching;
