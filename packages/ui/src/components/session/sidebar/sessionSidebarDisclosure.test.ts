@@ -9,6 +9,7 @@ const header = (activityKey: SessionSidebarActivityKey, collapsed: boolean, forc
   activityKey,
   collapsed,
   forceExpanded,
+  depth: 0,
 });
 
 const child = (key: string): SessionSidebarRow => ({

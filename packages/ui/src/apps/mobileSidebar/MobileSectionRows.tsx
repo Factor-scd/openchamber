@@ -12,6 +12,7 @@ import { useSessionFoldersStore } from '@/stores/useSessionFoldersStore';
 import { MobileProjectIcon } from '../MobileProjectIcon';
 import { MobileSwipeActionsRow, ROW_ACTION_SLOT_WIDTH } from '../MobileSessionSwipe';
 import type { MobileTreeGeometry } from './mobileSidebarGeometry';
+import { MOBILE_TREE_GEOMETRY } from './mobileSidebarGeometry';
 import { useMobileRowSwipe, useMobileSidebarActions, useMobileSidebarRowsStore } from './mobileSidebarState';
 import { MobileSwipeAction } from './mobileRowParts';
 
@@ -37,20 +38,22 @@ const MobileCaption: React.FC<{
   label: string;
   collapsed: boolean;
   forceExpanded: boolean;
+  /** Its nesting level; a child caption sits one step in, over its own rows. */
+  depth: number;
   onToggle: () => void;
-}> = ({ label, collapsed, forceExpanded, onToggle }) => {
+}> = ({ label, collapsed, forceExpanded, depth, onToggle }) => {
   const { t } = useI18n();
   return (
     <button
       type="button"
       className={cn(SECTION_HEADER_CLASS, 'w-full gap-1')}
+      style={{ paddingInlineStart: MOBILE_TREE_GEOMETRY.slotLeft(depth), touchAction: 'manipulation' }}
       disabled={forceExpanded}
       onClick={() => {
         if (!putAwayRevealed()) onToggle();
       }}
       aria-expanded={!collapsed}
       aria-label={collapsed ? t('sessions.sidebar.group.expandAria', { label }) : t('sessions.sidebar.group.collapseAria', { label })}
-      style={{ touchAction: 'manipulation' }}
     >
       <span className="min-w-0 truncate typography-ui-label font-medium text-muted-foreground">{label}</span>
       {forceExpanded ? null : <Icon name={collapsed ? 'arrow-right-s' : 'arrow-down-s'} className="size-4 shrink-0 text-muted-foreground" />}
@@ -64,7 +67,7 @@ export const MobileZoneHeader: React.FC<{
   onToggle: () => void;
 }> = ({ row, onToggle }) => {
   const { t } = useI18n();
-  return <MobileCaption label={row.label ?? (isBuiltinActivityKey(row.activityKey) ? t(ACTIVITY_TITLE_KEY[row.activityKey]) : '')} collapsed={row.collapsed} forceExpanded={row.forceExpanded} onToggle={onToggle} />;
+  return <MobileCaption label={row.label ?? (isBuiltinActivityKey(row.activityKey) ? t(ACTIVITY_TITLE_KEY[row.activityKey]) : '')} collapsed={row.collapsed} forceExpanded={row.forceExpanded} depth={row.depth} onToggle={onToggle} />;
 };
 
 /** The caption over the projects: closed, it folds every project away. */
@@ -73,7 +76,7 @@ export const MobileProjectsCaption: React.FC<{
   onToggle: () => void;
 }> = ({ row, onToggle }) => {
   const { t } = useI18n();
-  return <MobileCaption label={row.label ?? t('sessions.sidebar.activity.projectsTitle')} collapsed={row.collapsed} forceExpanded={row.forceExpanded} onToggle={onToggle} />;
+  return <MobileCaption label={row.label ?? t('sessions.sidebar.activity.projectsTitle')} collapsed={row.collapsed} forceExpanded={row.forceExpanded} depth={row.depth} onToggle={onToggle} />;
 };
 
 const HeaderIconButton: React.FC<{ icon: 'add' | 'git-branch'; label: string; onClick: () => void }> = ({ icon, label, onClick }) => (
@@ -147,12 +150,12 @@ export const MobileProjectHeader: React.FC<{
         <button
           type="button"
           className={SECTION_HEADER_CLASS}
+          style={{ paddingInlineStart: MOBILE_TREE_GEOMETRY.slotLeft(row.depth), touchAction: 'manipulation' }}
           onClick={() => {
             if (!putAwayRevealed() && !row.forceExpanded) onToggle();
           }}
           aria-expanded={!row.collapsed}
           aria-label={row.collapsed ? t('sessions.sidebar.group.expandAria', { label }) : t('sessions.sidebar.group.collapseAria', { label })}
-          style={{ touchAction: 'manipulation' }}
         >
           {/* As on the desktop: the icon in the rows' slot, the label at the
               rows' size and medium weight where their titles start. */}

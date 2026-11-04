@@ -55,19 +55,26 @@ export type SidebarSectionFilter = {
 /**
  * `grouping: 'project'` lists whole projects under their headers (a group of
  * projects such as "Clients"), so its filter takes projects only, and it always
- * claims them: a project is drawn in one place.
+ * claims them: a project is drawn in one place. `grouping: 'section'` is a
+ * caption for the sections placed under it, and lists nothing itself.
  */
+export type SidebarSectionGrouping = 'time' | 'project' | 'section';
+
 export type CustomSidebarSection = {
   kind: 'custom';
   id: string;
   name: string;
-  grouping: 'time' | 'project';
+  grouping: SidebarSectionGrouping;
   filter: SidebarSectionFilter;
   claims: boolean;
   hideWhenEmpty: boolean;
+  /** The section it sits under, when it is a child. Absent for a top-level section. */
+  parentId?: string;
 };
 
-export type SidebarSectionEntry = { kind: 'builtin'; id: BuiltinSidebarSectionId } | CustomSidebarSection;
+export type SidebarSectionEntry =
+  | { kind: 'builtin'; id: BuiltinSidebarSectionId; parentId?: string }
+  | CustomSidebarSection;
 
 /** A named list of pins the user files works into with Pin to. */
 export type SidebarPinList = { id: string; name: string };
@@ -126,30 +133,76 @@ const customSchema = z.object({
   kind: z.literal('custom'),
   id: idSchema,
   name: nameSchema,
-  grouping: z.enum(['time', 'project']).catch('time'),
+  grouping: z.enum(['time', 'project', 'section']).catch('time'),
   filter: filterSchema.catch({}),
   claims: z.boolean().catch(false),
   hideWhenEmpty: z.boolean().catch(true),
+  // A malformed placement is dropped, and the section stays where it is stored.
+  parentId: idSchema.optional().catch(undefined),
 });
 
 const builtinIdSchema = z.enum(BUILTIN_SIDEBAR_SECTION_IDS);
-const builtinSchema = z.object({ kind: z.literal('builtin'), id: builtinIdSchema });
+const builtinSchema = z.object({ kind: z.literal('builtin'), id: builtinIdSchema, parentId: idSchema.optional().catch(undefined) });
 
-const toFilter = (filter: z.infer<typeof filterSchema>, grouping: 'time' | 'project'): SidebarSectionFilter => (
-  // A group of projects lists whole projects; the other chips do not apply to it.
+const toFilter = (filter: z.infer<typeof filterSchema>, grouping: SidebarSectionGrouping): SidebarSectionFilter => (
+  // A group of projects lists whole projects; the other chips do not apply to
+  // it. A group of sections lists nothing of its own, so it asks nothing.
   grouping === 'project'
     ? { ...EMPTY_SIDEBAR_SECTION_FILTER, projectIds: filter.projectIds ?? [] }
-    : {
-      states: filter.states ?? [],
-      work: filter.work ?? [],
-      pins: filter.pins ?? [],
-      kinds: filter.kinds ?? [],
-      links: filter.links ?? [],
-      projectIds: filter.projectIds ?? [],
-      activity: filter.activity ?? 'any',
-      text: filter.text ?? [],
-    }
+    : grouping === 'section'
+      ? EMPTY_SIDEBAR_SECTION_FILTER
+      : {
+        states: filter.states ?? [],
+        work: filter.work ?? [],
+        pins: filter.pins ?? [],
+        kinds: filter.kinds ?? [],
+        links: filter.links ?? [],
+        projectIds: filter.projectIds ?? [],
+        activity: filter.activity ?? 'any',
+        text: filter.text ?? [],
+      }
 );
+
+/**
+ * Keeps each child directly after its parent, one level deep. A parent id that
+ * names nothing in the list, the entry itself, Projects or another child is
+ * dropped: that entry becomes top-level instead of disappearing.
+ */
+const placeSidebarSections = (entries: readonly SidebarSectionEntry[]): SidebarSectionEntry[] => {
+  const byId = new Map(entries.map((entry) => [entry.id, entry]));
+  const parentByChild = new Map<string, string>();
+  for (const entry of entries) {
+    // Projects is the catch-all and never a child.
+    if (entry.kind === 'builtin' && entry.id === 'projects') continue;
+    const parentId = entry.parentId;
+    if (!parentId || parentId === entry.id || parentId === 'projects') continue;
+    if (!byId.has(parentId)) continue;
+    parentByChild.set(entry.id, parentId);
+  }
+  // One level: a parent that is a child itself is not a parent.
+  for (const [childId, parentId] of parentByChild) {
+    if (parentByChild.has(parentId)) parentByChild.delete(childId);
+  }
+  const childrenByParent = new Map<string, SidebarSectionEntry[]>();
+  for (const entry of entries) {
+    const parentId = parentByChild.get(entry.id);
+    if (!parentId) continue;
+    const children = childrenByParent.get(parentId) ?? [];
+    children.push(entry);
+    childrenByParent.set(parentId, children);
+  }
+  const placedEntry = (entry: SidebarSectionEntry, parentId: string | undefined): SidebarSectionEntry => {
+    if (entry.kind === 'builtin') return parentId ? { kind: 'builtin', id: entry.id, parentId } : { kind: 'builtin', id: entry.id };
+    if (parentId) return { ...entry, parentId };
+    const topLevel: CustomSidebarSection = { ...entry };
+    delete topLevel.parentId;
+    return topLevel;
+  };
+  return entries.flatMap((entry): SidebarSectionEntry[] => {
+    if (parentByChild.has(entry.id)) return [];
+    return [placedEntry(entry, undefined), ...(childrenByParent.get(entry.id) ?? []).map((child) => placedEntry(child, entry.id))];
+  });
+};
 
 /**
  * The stored list made whole: invalid and repeated entries dropped, and every
@@ -166,7 +219,9 @@ export const sidebarSectionsSchema = z.array(z.unknown()).transform((stored): Si
     if (builtin.success) {
       if (seen.has(builtin.data.id)) continue;
       seen.add(builtin.data.id);
-      entries.push({ kind: 'builtin', id: builtin.data.id });
+      entries.push(builtin.data.parentId
+        ? { kind: 'builtin', id: builtin.data.id, parentId: builtin.data.parentId }
+        : { kind: 'builtin', id: builtin.data.id });
       continue;
     }
     const custom = customSchema.safeParse(raw);
@@ -177,7 +232,8 @@ export const sidebarSectionsSchema = z.array(z.unknown()).transform((stored): Si
       ...custom.data,
       filter: toFilter(custom.data.filter, custom.data.grouping),
       // A project shows in one place: a group of projects always takes its own.
-      claims: custom.data.grouping === 'project' ? true : custom.data.claims,
+      // A group of sections lists nothing itself, so it never takes anything.
+      claims: custom.data.grouping === 'project' ? true : custom.data.grouping === 'section' ? false : custom.data.claims,
     });
   }
   BUILTIN_SIDEBAR_SECTION_IDS.forEach((id, defaultIndex) => {
@@ -188,7 +244,7 @@ export const sidebarSectionsSchema = z.array(z.unknown()).transform((stored): Si
     entries.splice(at, 0, { kind: 'builtin', id });
     seen.add(id);
   });
-  return entries;
+  return placeSidebarSections(entries);
 });
 
 export const sidebarPinListsSchema = z.array(z.unknown()).transform((stored): SidebarPinList[] => {
@@ -316,7 +372,7 @@ export const matchesSidebarSectionFilter = (filter: SidebarSectionFilter, facts:
 };
 
 /** The starting points the section editor offers; names are set by the editor, translated. */
-const SIDEBAR_SECTION_TEMPLATES = ['waiting', 'running', 'prs', 'stalled', 'today', 'projects', 'blank'] as const;
+const SIDEBAR_SECTION_TEMPLATES = ['waiting', 'running', 'prs', 'stalled', 'today', 'projects', 'sectionGroup', 'blank'] as const;
 export type SidebarSectionTemplate = typeof SIDEBAR_SECTION_TEMPLATES[number];
 
 export const createSidebarSectionFromTemplate = (template: SidebarSectionTemplate, name: string): CustomSidebarSection => {
@@ -330,6 +386,9 @@ export const createSidebarSectionFromTemplate = (template: SidebarSectionTemplat
     case 'stalled': return { ...base, filter: { ...EMPTY_SIDEBAR_SECTION_FILTER, work: ['in-work'], activity: 'stalled' } };
     case 'today': return { ...base, filter: { ...EMPTY_SIDEBAR_SECTION_FILTER, activity: 'today' } };
     case 'projects': return { ...base, grouping: 'project', claims: true, hideWhenEmpty: false };
+    // A group of sections starts empty, and stays visible until sections are
+    // placed under it.
+    case 'sectionGroup': return { ...base, grouping: 'section', hideWhenEmpty: false };
     case 'blank': return base;
   }
 };

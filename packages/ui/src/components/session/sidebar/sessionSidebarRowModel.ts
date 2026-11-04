@@ -49,16 +49,25 @@ export const sidebarSectionActivityKey = (id: string): `section:${string}` => `s
  * of their own lists its works by time (`custom`) or whole projects
  * (`project-group`); `projects` lists every project no group took, or the
  * list by time. `preview`: the section is being edited and drawn as it stands.
+ * `depth`: 0 for a top-level section, 1 for one placed under a parent.
  */
 export type SessionSidebarBlock =
-  | { kind: 'chats' }
-  | { kind: 'pinned' }
-  | { kind: 'work' }
-  | { kind: 'custom'; id: string; name: string; entries: readonly SessionSidebarWorkEntry[]; hideWhenEmpty: boolean; preview: boolean }
-  | { kind: 'project-group'; id: string; name: string; projectIds: readonly string[]; hideWhenEmpty: boolean; preview: boolean }
-  | { kind: 'projects'; excludedProjectIds?: ReadonlySet<string> };
+  | { kind: 'chats'; depth: number }
+  | { kind: 'pinned'; depth: number }
+  | { kind: 'work'; depth: number }
+  | { kind: 'custom'; id: string; name: string; entries: readonly SessionSidebarWorkEntry[]; hideWhenEmpty: boolean; preview: boolean; depth: number }
+  | { kind: 'project-group'; id: string; name: string; projectIds: readonly string[]; hideWhenEmpty: boolean; preview: boolean; depth: number }
+  | { kind: 'projects'; excludedProjectIds?: ReadonlySet<string>; depth: number };
 
-const DEFAULT_BLOCKS: readonly SessionSidebarBlock[] = [{ kind: 'chats' }, { kind: 'pinned' }, { kind: 'work' }, { kind: 'projects' }];
+const DEFAULT_BLOCKS: readonly SessionSidebarBlock[] = [
+  { kind: 'chats', depth: 0 },
+  { kind: 'pinned', depth: 0 },
+  { kind: 'work', depth: 0 },
+  { kind: 'projects', depth: 0 },
+];
+
+/** What one section drew: `collapsed` also folds away its children. */
+type BlockOutcome = 'collapsed' | 'drawn' | 'nothing';
 
 /** Activity sections; the display menu's Collapse all / Expand all drive them with the projects. */
 export const SIDEBAR_ACTIVITY_KEYS: readonly SessionSidebarActivityKey[] = ['chats', 'pinned', 'work', 'timeline'];
@@ -92,12 +101,13 @@ type RowBase = { key: string; estimateSize: number; treeGuides?: readonly Sessio
 
 export type SessionSidebarRow =
   // `label`: the name of one of the user's sections, which has no built-in title.
-  | (RowBase & { kind: 'activity-header'; activityKey: SessionSidebarActivityKey; collapsed: boolean; forceExpanded: boolean; label?: string; preview?: boolean })
-  | (RowBase & { kind: 'project-header'; section: ProjectSection; collapsed: boolean; forceExpanded: boolean })
+  // `depth`: its nesting level; a caption under a parent sits one step in.
+  | (RowBase & { kind: 'activity-header'; activityKey: SessionSidebarActivityKey; collapsed: boolean; forceExpanded: boolean; label?: string; preview?: boolean; depth: number })
+  | (RowBase & { kind: 'project-header'; section: ProjectSection; collapsed: boolean; forceExpanded: boolean; depth: number })
   // The caption over the projects, as each zone has its own (desktop only);
   // closing it folds every project away, as a zone's header folds its rows.
   // A group of projects the user made has a caption of its own, named `label`.
-  | (RowBase & { kind: 'caption'; caption: 'projects' | `section:${string}`; collapsed: boolean; forceExpanded: boolean; label?: string; preview?: boolean })
+  | (RowBase & { kind: 'caption'; caption: 'projects' | `section:${string}`; collapsed: boolean; forceExpanded: boolean; label?: string; preview?: boolean; depth: number })
   // `empty`: nothing to list under the header, so it offers no chevron.
   // `depth`: its tree level (1 inside a folder). `mixed`: listed among other
   // projects' works (In work, the list by time), so it names its project.
@@ -230,6 +240,12 @@ export type SessionSidebarRowModelArgs = {
   runIndex?: MultiRunIndex;
   /** The sections in order; Chats, Pinned, In work and Projects when not given. */
   blocks?: readonly SessionSidebarBlock[];
+  /**
+   * The sidebar folds to its captions while a section is dragged there. Every
+   * caption folds, children included, so a collapsed parent must not hide its
+   * children's captions.
+   */
+  showChildSections?: boolean;
 };
 
 type RunEntry = { run: MultiRunSummary; lanes: SessionNode[] };
@@ -710,8 +726,9 @@ export const buildSessionSidebarRowModel = (args: SessionSidebarRowModelArgs): S
     const storedCollapsed = !search && args.collapsedGroups.has(groupKey);
     // A worktree, space or archive header is a tree node of its own: its
     // folders and sessions sit one level under it. The project root group has
-    // no header, so its contents sit right under the project.
-    const contentDepth = hideHeader ? 0 : placement.depth + 1;
+    // no header, so its contents sit at its own level, under the section that
+    // holds it.
+    const contentDepth = hideHeader ? placement.depth : placement.depth + 1;
     const status = args.groupStatusByKey.get(groupKey);
     const groupLoaded = !status || status.state === 'ready';
     // Nothing to list: no sessions, no folders, and no loading or failure
@@ -913,10 +930,10 @@ export const buildSessionSidebarRowModel = (args: SessionSidebarRowModelArgs): S
     }
   };
 
-  const appendActivityHeader = (activityKey: SessionSidebarActivityKey, named?: { label: string; preview: boolean }): boolean => {
+  const appendActivityHeader = (activityKey: SessionSidebarActivityKey, named?: { label: string; preview: boolean }, depth = 0): boolean => {
     const collapsed = !search && args.collapsedActivities.has(activityKey);
     const rowIndex = rows.length;
-    push({ kind: 'activity-header', key: `activity:${activityKey}:header`, estimateSize: SECTION_HEADER_ESTIMATE, activityKey, collapsed, forceExpanded: search, ...named });
+    push({ kind: 'activity-header', key: `activity:${activityKey}:header`, estimateSize: SECTION_HEADER_ESTIMATE, activityKey, collapsed, forceExpanded: search, ...named, depth });
     stickyHeaders.push(Object.freeze({ rowIndex, kind: 'activity', id: activityKey }));
     return collapsed;
   };
@@ -939,6 +956,7 @@ export const buildSessionSidebarRowModel = (args: SessionSidebarRowModelArgs): S
     entry: ActivityRunEntry,
     containerKey: string,
     renderContext: SessionSidebarRenderContext,
+    depth: number,
   ): void => {
     const first = entry.items[0];
     if (!first) return;
@@ -956,7 +974,7 @@ export const buildSessionSidebarRowModel = (args: SessionSidebarRowModelArgs): S
       selectionScopeKey: null, archived: false, renderContext,
       getSecondaryMeta: (sessionId) => metaById.get(sessionId) ?? null,
       getBlockingBadgeSessionScopes: (sessionId) => badgeScopesById.get(sessionId),
-      indexedNodes: indexed, selectionPoolOffset,
+      indexedNodes: indexed, selectionPoolOffset, baseDepth: depth,
     });
   };
 
@@ -968,10 +986,11 @@ export const buildSessionSidebarRowModel = (args: SessionSidebarRowModelArgs): S
     items: readonly SessionSidebarActivityItem[],
     containerKey: string,
     renderContext: SessionSidebarRenderContext,
+    depth: number,
   ): void => {
     for (const entry of collapseActivityItems(items)) {
       if (isActivityRunEntry(entry)) {
-        appendActivityRun(entry, containerKey, renderContext);
+        appendActivityRun(entry, containerKey, renderContext, depth);
         if (search) searchMatchCount += entry.items.reduce((total, item) => total + countZoneMatches(item), 0);
         continue;
       }
@@ -984,26 +1003,27 @@ export const buildSessionSidebarRowModel = (args: SessionSidebarRowModelArgs): S
         // Zone lists carry no selection scope.
         selectionScopeKey: null, archived: false, renderContext,
         blockingBadgeSessionScopes: item.blockingBadgeSessionScopes,
-        secondaryMeta: item.secondaryMeta, getSecondaryMeta: item.getSecondaryMeta, indexedNodes: indexed, selectionPoolOffset,
+        secondaryMeta: item.secondaryMeta, getSecondaryMeta: item.getSecondaryMeta, indexedNodes: indexed, selectionPoolOffset, baseDepth: depth,
       });
       if (search) searchMatchCount += countZoneMatches(item);
     }
   };
 
-  const appendChats = (): void => {
-    if (!args.chatGroup) return;
-    if (search && groupSearchMatches(args.chatGroup) === 0 && !(args.archivedChatGroup && groupSearchMatches(args.archivedChatGroup) > 0)) return;
-    const collapsed = appendActivityHeader('chats');
-    if (collapsed) return;
+  const appendChats = (depth: number, captionOnly = false): BlockOutcome => {
+    const chatGroup = args.chatGroup;
+    if (!chatGroup || (!captionOnly && !chatsDraw())) return 'nothing';
+    const collapsed = appendActivityHeader('chats', undefined, depth);
+    if (collapsed) return 'collapsed';
     // Chats are one-line rows with the tree's state slot, on a short page
     // that pinned chats do not spend.
-    appendGroup(args.chatGroup, 'activity:chats', null, true, {
+    appendGroup(chatGroup, 'activity:chats', null, true, {
       initial: CHATS_INITIAL_LIMIT, increment: CHATS_INCREMENT, pinnedAlwaysVisible: true,
       renderContext: 'tree-chat',
-    });
+    }, { ...PROJECT_PLACEMENT, depth });
     if (args.archivedChatGroup) {
-      appendGroup(args.archivedChatGroup, 'activity:chats:archived', null, false, { renderContext: 'tree-chat' });
+      appendGroup(args.archivedChatGroup, 'activity:chats:archived', null, false, { renderContext: 'tree-chat' }, { ...PROJECT_PLACEMENT, depth });
     }
+    return 'drawn';
   };
 
   // Pinned, In work and the list by time mix every project's works: one-line
@@ -1044,12 +1064,12 @@ export const buildSessionSidebarRowModel = (args: SessionSidebarRowModelArgs): S
    * project and kept out of the drag sort. A group counts its own search
    * matches.
    */
-  const appendWorkEntries = (allEntries: readonly SessionSidebarWorkEntry[], containerKey: string): void => {
+  const appendWorkEntries = (allEntries: readonly SessionSidebarWorkEntry[], containerKey: string, depth = 0): void => {
     const entries = gatherRunMembers(allEntries);
     let pending: SessionSidebarActivityItem[] = [];
     const flush = (): void => {
       if (pending.length === 0) return;
-      appendActivityItems(pending, containerKey, zoneRenderContext);
+      appendActivityItems(pending, containerKey, zoneRenderContext, depth);
       pending = [];
     };
     for (const entry of entries) {
@@ -1060,11 +1080,11 @@ export const buildSessionSidebarRowModel = (args: SessionSidebarRowModelArgs): S
       flush();
       if (entry.kind === 'draft') {
         const detailed = args.detailedZoneRows === true;
-        push({ kind: 'draft', key: keyFor(`${containerKey}:draft:${entry.draft.id}`), estimateSize: detailed ? TIMELINE_SESSION_ESTIMATE : SESSION_ESTIMATE, draft: entry.draft, depth: 0, projectId: entry.projectId, mixed: true, detailed });
+        push({ kind: 'draft', key: keyFor(`${containerKey}:draft:${entry.draft.id}`), estimateSize: detailed ? TIMELINE_SESSION_ESTIMATE : SESSION_ESTIMATE, draft: entry.draft, depth, projectId: entry.projectId, mixed: true, detailed });
         continue;
       }
       appendGroup(entry.group, entry.groupKey, entry.projectId, false, undefined, {
-        keyPrefix: `${containerKey}:`, depth: 0, mixed: true,
+        keyPrefix: `${containerKey}:`, depth, mixed: true,
       });
     }
     flush();
@@ -1077,34 +1097,83 @@ export const buildSessionSidebarRowModel = (args: SessionSidebarRowModelArgs): S
   const matchesSearch = (entry: SessionSidebarWorkEntry): boolean => (
     !search || entry.kind === 'session' || (entry.kind === 'group' && groupSearchMatches(entry.group) > 0)
   );
-  const appendPinned = (): void => {
-    const pinnedItems = args.pinnedItems ?? [];
-    const pinnedWorktrees = (args.pinnedWorktrees ?? []).filter(matchesSearch);
-    if (pinnedItems.length === 0 && pinnedWorktrees.length === 0) return;
-    const collapsed = appendActivityHeader('pinned');
-    if (collapsed) return;
-    appendActivityItems(pinnedItems, 'activity:pinned', zoneRenderContext);
-    appendWorkEntries(pinnedWorktrees, 'activity:pinned');
+
+  // Whether one section draws anything of its own. A parent asks this of its
+  // children to know whether its own caption is worth drawing, and its append
+  // function asks before it starts, so the two cannot drift.
+  const pinnedWorkEntries = (): readonly SessionSidebarWorkEntry[] => (args.pinnedWorktrees ?? []).filter(matchesSearch);
+  const workEntriesToDraw = (): readonly SessionSidebarWorkEntry[] => (args.workEntries ?? []).filter(matchesSearch);
+  const pinnedContent = (): boolean => (args.pinnedItems ?? []).length > 0 || pinnedWorkEntries().length > 0;
+  const workContent = (): boolean => workEntriesToDraw().length > 0;
+  const chatsDraw = (): boolean => {
+    const chatGroup = args.chatGroup;
+    if (!chatGroup) return false;
+    if (!search) return true;
+    return groupSearchMatches(chatGroup) > 0 || Boolean(args.archivedChatGroup && groupSearchMatches(args.archivedChatGroup) > 0);
   };
-  const appendWork = (): void => {
-    const workEntries = (args.workEntries ?? []).filter(matchesSearch);
-    if (workEntries.length === 0) return;
-    const collapsed = appendActivityHeader('work');
-    if (!collapsed) appendWorkEntries(workEntries, 'activity:work');
+  const projectGroupSections = (block: Extract<SessionSidebarBlock, { kind: 'project-group' }>): readonly ProjectSection[] => {
+    if (args.singleProjectMode || args.showOnlyMainWorkspace) return [];
+    const byId = new Map(args.sections.map((section) => [section.project.id, section]));
+    return block.projectIds.flatMap((id) => byId.get(id) ?? []);
+  };
+  const blockHasOwnContent = (block: SessionSidebarBlock): boolean => {
+    switch (block.kind) {
+      case 'chats': return chatsDraw();
+      case 'pinned': return pinnedContent();
+      case 'work': return workContent();
+      case 'custom': return block.entries.filter(matchesSearch).length > 0;
+      case 'project-group': return projectGroupSections(block).length > 0;
+      case 'projects': return true;
+    }
+  };
+  const blockDraws = (block: SessionSidebarBlock): boolean => {
+    switch (block.kind) {
+      case 'chats':
+      case 'pinned':
+      case 'work':
+      case 'projects':
+        return blockHasOwnContent(block);
+      case 'custom':
+        return blockHasOwnContent(block) || (!search && !block.hideWhenEmpty) || block.preview;
+      case 'project-group':
+        if (args.singleProjectMode || args.showOnlyMainWorkspace) return false;
+        return blockHasOwnContent(block) || (!search && !block.hideWhenEmpty) || block.preview;
+    }
+  };
+
+  const appendPinned = (depth: number, captionOnly = false): BlockOutcome => {
+    const pinnedItems = args.pinnedItems ?? [];
+    const pinnedWorktrees = pinnedWorkEntries();
+    if (!pinnedContent() && !captionOnly) return 'nothing';
+    const collapsed = appendActivityHeader('pinned', undefined, depth);
+    if (collapsed) return 'collapsed';
+    appendActivityItems(pinnedItems, 'activity:pinned', zoneRenderContext, depth);
+    appendWorkEntries(pinnedWorktrees, 'activity:pinned', depth);
+    return 'drawn';
+  };
+  const appendWork = (depth: number, captionOnly = false): BlockOutcome => {
+    const workEntries = workEntriesToDraw();
+    if (!workContent() && !captionOnly) return 'nothing';
+    const collapsed = appendActivityHeader('work', undefined, depth);
+    if (collapsed) return 'collapsed';
+    appendWorkEntries(workEntries, 'activity:work', depth);
+    return 'drawn';
   };
   // One of the user's sections listed by time. Empty, it shows only when the
   // user asked to keep it, and never during a search, which hides what matches nothing.
-  const appendCustom = (block: Extract<SessionSidebarBlock, { kind: 'custom' }>): void => {
+  // `captionOnly`: a parent whose own list is empty, drawn for the children under it.
+  const appendCustom = (block: Extract<SessionSidebarBlock, { kind: 'custom' }>, captionOnly = false): BlockOutcome => {
     const entries = block.entries.filter(matchesSearch);
-    if (entries.length === 0 && (search || block.hideWhenEmpty) && !block.preview) return;
+    if (!captionOnly && !blockDraws(block)) return 'nothing';
     const activityKey = sidebarSectionActivityKey(block.id);
-    const collapsed = appendActivityHeader(activityKey, { label: block.name, preview: block.preview });
-    if (collapsed) return;
+    const collapsed = appendActivityHeader(activityKey, { label: block.name, preview: block.preview }, block.depth);
+    if (collapsed) return 'collapsed';
     if (entries.length === 0) {
-      push({ kind: 'empty', key: `activity:${activityKey}:empty`, estimateSize: STATUS_ESTIMATE, emptyKind: 'section' });
-      return;
+      if (!captionOnly) push({ kind: 'empty', key: `activity:${activityKey}:empty`, estimateSize: STATUS_ESTIMATE, emptyKind: 'section', depth: block.depth });
+      return 'drawn';
     }
-    appendWorkEntries(entries, `activity:${activityKey}`);
+    appendWorkEntries(entries, `activity:${activityKey}`, block.depth);
+    return 'drawn';
   };
 
   // Keep the selected project's picker even when search has no matches there.
@@ -1121,12 +1190,15 @@ export const buildSessionSidebarRowModel = (args: SessionSidebarRowModelArgs): S
   const appendProjectSections = (
     projectSections: readonly ProjectSection[],
     caption: { key: 'projects' | `section:${string}`; label?: string; preview?: boolean; always: boolean },
-  ): void => {
+    depth: number,
+    captionOnly = false,
+  ): BlockOutcome => {
+    const rowsBefore = rows.length;
     let captioned = !caption.always && (!args.projectsCaption || args.singleProjectMode || args.showOnlyMainWorkspace || (rows.length === 0 && !args.projectsCaptionAtTop));
     if (caption.always && projectSections.length === 0) {
-      push({ kind: 'caption', key: `caption:${caption.key}`, estimateSize: SECTION_HEADER_ESTIMATE, caption: caption.key, collapsed: false, forceExpanded: search, label: caption.label, preview: caption.preview });
-      push({ kind: 'empty', key: `caption:${caption.key}:empty`, estimateSize: STATUS_ESTIMATE, emptyKind: 'section' });
-      return;
+      push({ kind: 'caption', key: `caption:${caption.key}`, estimateSize: SECTION_HEADER_ESTIMATE, caption: caption.key, collapsed: false, forceExpanded: search, label: caption.label, preview: caption.preview, depth });
+      if (!captionOnly) push({ kind: 'empty', key: `caption:${caption.key}:empty`, estimateSize: STATUS_ESTIMATE, emptyKind: 'section', depth });
+      return 'drawn';
     }
     for (const section of projectSections) {
       const descriptors = buildGroupRenderDescriptors(section, { mainWorkspaceOnly: args.showOnlyMainWorkspace });
@@ -1137,12 +1209,12 @@ export const buildSessionSidebarRowModel = (args: SessionSidebarRowModelArgs): S
         captioned = true;
         const collapseKey = caption.key === 'projects' ? PROJECTS_CAPTION_COLLAPSE_KEY : caption.key;
         const captionCollapsed = !search && args.collapsedActivities.has(collapseKey);
-        push({ kind: 'caption', key: `caption:${caption.key}`, estimateSize: SECTION_HEADER_ESTIMATE, caption: caption.key, collapsed: captionCollapsed, forceExpanded: search, label: caption.label, preview: caption.preview });
-        if (captionCollapsed) break;
+        push({ kind: 'caption', key: `caption:${caption.key}`, estimateSize: SECTION_HEADER_ESTIMATE, caption: caption.key, collapsed: captionCollapsed, forceExpanded: search, label: caption.label, preview: caption.preview, depth });
+        if (captionCollapsed) return 'collapsed';
       }
       if (!args.showOnlyMainWorkspace) {
         const rowIndex = rows.length;
-        push({ kind: 'project-header', key: `project:${section.project.id}:header`, estimateSize: SECTION_HEADER_ESTIMATE, section, collapsed: projectCollapsed, forceExpanded: search });
+        push({ kind: 'project-header', key: `project:${section.project.id}:header`, estimateSize: SECTION_HEADER_ESTIMATE, section, collapsed: projectCollapsed, forceExpanded: search, depth });
         stickyHeaders.push(Object.freeze({ rowIndex, kind: 'project', id: section.project.id }));
       }
       if (projectCollapsed) continue;
@@ -1174,24 +1246,24 @@ export const buildSessionSidebarRowModel = (args: SessionSidebarRowModelArgs): S
       for (const descriptor of descriptors) {
         // A worktree work a section lists has left its project.
         if (movedGroupKeys.has(descriptor.groupKey) || filedGroupKeys.has(descriptor.groupKey) || listedGroupKeys.has(descriptor.groupKey)) continue;
-        appendGroup(descriptor.group, descriptor.groupKey, descriptor.projectId, descriptor.hideGroupLabel, undefined, PROJECT_PLACEMENT,
+        appendGroup(descriptor.group, descriptor.groupKey, descriptor.projectId, descriptor.hideGroupLabel, undefined, { ...PROJECT_PLACEMENT, depth },
           descriptor.group.isMain ? worktreesByMemberId : undefined, descriptor.group.isMain ? listedWorktrees : undefined);
       }
     }
+    return rows.length > rowsBefore ? 'drawn' : 'nothing';
   };
 
   // A group of projects the user made: those projects, whole, under its own
   // caption. Single-project mode shows the one project it picked instead.
-  const appendProjectGroup = (block: Extract<SessionSidebarBlock, { kind: 'project-group' }>): void => {
-    if (args.singleProjectMode || args.showOnlyMainWorkspace) return;
-    const byId = new Map(args.sections.map((section) => [section.project.id, section]));
-    const projectSections = block.projectIds.flatMap((id) => byId.get(id) ?? []);
-    // Empty, it shows only when the user asked to keep it, and never during a search.
-    if (projectSections.length === 0 && (search || block.hideWhenEmpty) && !block.preview) return;
-    appendProjectSections(projectSections, { key: sidebarSectionActivityKey(block.id), label: block.name, preview: block.preview, always: true });
+  const appendProjectGroup = (block: Extract<SessionSidebarBlock, { kind: 'project-group' }>, captionOnly = false): BlockOutcome => {
+    if (!captionOnly && !blockDraws(block)) return 'nothing';
+    const projectSections = projectGroupSections(block);
+    return appendProjectSections(projectSections, { key: sidebarSectionActivityKey(block.id), label: block.name, preview: block.preview, always: true }, block.depth, captionOnly);
   };
 
-  const appendProjects = (block: Extract<SessionSidebarBlock, { kind: 'projects' }>): void => {
+  const appendProjects = (block: Extract<SessionSidebarBlock, { kind: 'projects' }>): BlockOutcome => {
+    const rowsBefore = rows.length;
+    const depth = block.depth;
     const excluded = block.excludedProjectIds;
     const timeEntries = args.singleProjectMode ? null : args.timeEntries ?? null;
     if (timeEntries) {
@@ -1199,8 +1271,8 @@ export const buildSessionSidebarRowModel = (args: SessionSidebarRowModelArgs): S
       // one zone header. It is virtualized, so it reveals all of them at once.
       const entries = timeEntries.filter(matchesSearch);
       if (entries.length > 0) {
-        const collapsed = appendActivityHeader('timeline');
-        if (!collapsed) appendWorkEntries(entries, 'activity:timeline');
+        const collapsed = appendActivityHeader('timeline', undefined, depth);
+        if (!collapsed) appendWorkEntries(entries, 'activity:timeline', depth);
       }
       // The list has no project headers to hold a load status, so it closes
       // with one line per distinct status of a project it lists nothing for,
@@ -1222,7 +1294,7 @@ export const buildSessionSidebarRowModel = (args: SessionSidebarRowModelArgs): S
           push({ kind: 'status', key: `activity:timeline:status:${groupKey}`, estimateSize: STATUS_ESTIMATE, status, group: mainGroup, groupKey, flat: true });
         }
       }
-      return;
+      return rows.length > rowsBefore ? 'drawn' : 'nothing';
     }
     let projectSections = excluded && excluded.size > 0 && !args.singleProjectMode
       ? sections.filter((section) => !excluded.has(section.project.id))
@@ -1231,18 +1303,42 @@ export const buildSessionSidebarRowModel = (args: SessionSidebarRowModelArgs): S
       const active = projectSections.find((section) => section.project.id === args.activeProjectId) ?? projectSections[0];
       projectSections = active ? [active] : [];
     }
-    appendProjectSections(projectSections, { key: 'projects', always: false });
+    return appendProjectSections(projectSections, { key: 'projects', always: false }, depth);
   };
 
-  for (const block of args.blocks ?? DEFAULT_BLOCKS) {
-    switch (block.kind) {
-      case 'chats': appendChats(); break;
-      case 'pinned': appendPinned(); break;
-      case 'work': appendWork(); break;
-      case 'custom': appendCustom(block); break;
-      case 'project-group': appendProjectGroup(block); break;
-      case 'projects': appendProjects(block); break;
+  const blocks = args.blocks ?? DEFAULT_BLOCKS;
+  // A block is a parent when a depth-1 block follows it: the stored order keeps
+  // each child directly after its parent.
+  const isParentBlock = blocks.map((block, index) => block.depth === 0 && blocks[index + 1]?.depth === 1);
+  const ownContent = blocks.map(blockHasOwnContent);
+  // What a parent draws alone: nothing of its own, a child that shows something,
+  // so its caption is still the way to open and close them.
+  const captionOnlyBlock = blocks.map((block, index) => {
+    if (isParentBlock[index] !== true || ownContent[index] === true) return false;
+    for (let childIndex = index + 1; childIndex < blocks.length; childIndex += 1) {
+      const child = blocks[childIndex];
+      if (!child || child.depth !== 1) break;
+      if (blockDraws(child)) return true;
     }
+    return false;
+  });
+  let skipChildren = false;
+  for (let index = 0; index < blocks.length; index += 1) {
+    const block = blocks[index];
+    if (!block) continue;
+    if (block.depth > 0 && skipChildren && args.showChildSections !== true) continue;
+    if (block.depth === 0) skipChildren = false;
+    const captionOnly = captionOnlyBlock[index] === true;
+    let outcome: BlockOutcome;
+    switch (block.kind) {
+      case 'chats': outcome = appendChats(block.depth, captionOnly); break;
+      case 'pinned': outcome = appendPinned(block.depth, captionOnly); break;
+      case 'work': outcome = appendWork(block.depth, captionOnly); break;
+      case 'custom': outcome = appendCustom(block, captionOnly); break;
+      case 'project-group': outcome = appendProjectGroup(block, captionOnly); break;
+      case 'projects': outcome = appendProjects(block); break;
+    }
+    if (block.depth === 0 && outcome === 'collapsed') skipChildren = true;
   }
 
   if (rows.length === 0 || (search && args.singleProjectMode && searchMatchCount === 0)) {

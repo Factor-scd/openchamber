@@ -3,25 +3,29 @@
 The sidebar is an ordered list of sections. Four are built in (Chats, Pinned,
 In work, Projects); the user adds their own, each a filter over the works the
 sidebar lists or a group of whole projects. This folder owns which works each
-section lists, the manager and editor that arrange and define them, and Pin to
-with its named pin lists. How the rows are drawn stays with the row model
-(`sessionSidebarRowModel.ts`, `SessionSidebarBlock`).
+section lists, the manager and editor that arrange and define them, where a
+section sits in the one level of nesting, and Pin to with its named pin lists.
+How the rows are drawn stays with the row model (`sessionSidebarRowModel.ts`,
+`SessionSidebarBlock`).
 
 - `lib/sidebarSections.ts` (shared with the settings registry and the server
   sanitizer's copy): the stored shapes, `normalizeSidebarSections` (drops broken
-  entries, restores missing built-in sections at their default place), the
-  filter (`matchesSidebarSectionFilter`) and the editor's templates.
+  entries, restores missing built-in sections, and places each child after its
+  parent), the filter (`matchesSidebarSectionFilter`) and the editor's templates.
 - `sectionMembership.ts`: `resolveVisibleSidebarSections` (what this surface
   draws, the section being edited included) and
   `resolveSidebarSectionMembership` (which works each section lists).
 - `workFacts.ts`, `useSidebarLiveFacts.ts`: what a filter is matched against.
 - `sectionActions.ts`: the editor's device-only state (`useSidebarSectionsUiStore`)
-  and every write of sections, visibility and pin lists.
+  and every write of sections, visibility, pin lists and placement.
+- `sectionNesting.ts`: `applySectionDrop` for the manager's drag, and
+  `applySectionParent` for its row menu, so the two write the same placement.
 - `SidebarSectionsManager.tsx`: the manager and the editor, a popover beside the
   sidebar opened from the display menu. It loads on its first open. Its rows
-  drag anywhere but their controls, as the sidebar's do (`../rowDrag.ts`); in
-  the sidebar a section drags by its caption
-  (`projects/SortableSidebarSection.tsx`), and both write the same order.
+  drag anywhere but their controls, as the sidebar's do (`../rowDrag.ts`); a row
+  leans sideways to nest or lift a section out. In the sidebar a section drags
+  by its caption (`projects/SortableSidebarSection.tsx`), and both write the
+  same order.
 - `PinToMenu.tsx`, `NewPinListDialog.tsx`, `apps/mobileSidebar/MobilePinToSheet.tsx`:
   Pin to on the row menus, the swipe on the phone, and naming a new list.
 
@@ -35,6 +39,28 @@ with its named pin lists. How the rows are drawn stays with the row model
   is on; between the two, the higher one lists a work that is both pinned and in
   work, as before. Projects lists what no section took out and no group of
   projects took, wherever it stands in the order.
+- Sections nest one level deep, through `parentId` on the entry. The stored
+  order keeps each child directly after its parent, and a placement the
+  normalizer cannot resolve makes that entry top-level instead of dropping it.
+  Projects never nests: it is the catch-all, and its caption is its own path in
+  the row model. A child cannot be a parent, so a section that already holds
+  children cannot itself be moved under another; its children move with it when
+  it is reordered at the top level or lifted out.
+- A parent is either a `grouping: 'section'` caption or an ordinary section
+  that keeps its own works. Its caption opens and closes everything under it; a
+  child keeps its own filter, order among siblings and visibility switch.
+- A hidden parent hides its children on that surface: a container that is off
+  is off. A hidden child leaves the parent. Where the user's sections do not
+  apply (VS Code) a built-in child is drawn at the top level in its stored
+  place, so that surface never loses it.
+- A parent with nothing of its own still draws its caption when one of its
+  children draws, so the children can be opened and closed. Its own empty row
+  appears only when no child draws and "Hide when empty" is off. A collapsed
+  parent skips its children's rows without touching their own collapse keys.
+- A search lists each match once, in the first section that shows it, and that
+  order follows the tree: the parent, then its children in stored order, then
+  the next top-level section. A parent draws during a search only when it or a
+  child of it has a match.
 - A group of projects (`grouping: 'project'`) takes whole projects, and only
   projects: its filter keeps `projectIds` alone, and it always takes them, so
   a project is drawn in one place (two project headers of one project would
@@ -162,3 +188,44 @@ over it keep their glass.
 The row menu has no room for another item. Pin becomes a submenu (Pinned, the
 user's lists, a new list, Unpin), so manual collections need no mechanism of
 their own: a list is a pin with a name, and a section shows it.
+
+### Why one level and a parent id
+
+A parent holds its children in `parentId` on the child, and the list stays the
+order. One level is enough to say "these belong together" without a tree the
+manager and the sidebar would each have to draw and collapse; a tree also
+brings ambiguous drops (a grandchild in between siblings) that one level does
+not. The id lives on the entry rather than a placement field on a wrapper,
+because the editor's draft is an entry and `commitSectionDraft` saves it as it
+is; a wrapper would lose the placement on every edit. An older client strips
+`parentId` and draws the section at the top level, and saving from it drops the
+nesting, which is acceptable for a build that does not know the field.
+
+### Why a group of sections is a grouping
+
+A caption that lists nothing looked like a section with a filter that happens to
+match nothing, which the editor already has ("a section that asks nothing lists
+nothing"). Adding `grouping: 'section'` says the section draws something else,
+as `grouping: 'project'` already does for whole projects, and lets the editor
+hide conditions the grouping cannot use. Its filter is normalized empty and it
+never claims.
+
+### Why hiding a parent hides its children
+
+The switch on a parent reads as "show this section", and children only exist
+inside it. Leaving them on screen after the parent went would show a group
+without its name, and the sidebar would have to invent a caption for it. The
+children's own switches are kept, so a parent turned back on returns the group
+as the user arranged it. The one surface that never draws the parent's own kind,
+VS Code, still draws a built-in child at the top level: the parent was never
+there, so it cannot have been turned off.
+
+### Why a child indents its rows
+
+A child section sits under its parent, and its rows at the parent's indent would
+read as the parent's own works. One tree step (`sectionCaptionInset`, the tree's
+own step on top of the caption's 16px) puts the child caption in, and the rows
+inside it follow by the same step through `baseDepth`. The step is logical
+(`paddingInlineStart`), so right-to-left surfaces indent from the right. The
+manager uses its own 14px step for its own rows, which are not the session
+tree's.

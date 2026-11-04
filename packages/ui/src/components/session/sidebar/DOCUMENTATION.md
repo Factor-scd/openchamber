@@ -97,8 +97,10 @@ labels) from the index.
 
 Web and desktop show the sections in the order the user arranged them: by
 default managed Chats, then Pinned and In work, then the projects or the list by
-time (see One view). The user's own sections, groups of projects and Pin to
-lists are in `sections/DOCUMENTATION.md`. There is no Recent zone any more (removed
+time (see One view). The user's own sections, groups of projects, groups of
+sections and Pin to lists are in `sections/DOCUMENTATION.md`; a section can hold
+other sections one level deep, and its caption opens and closes them. There is
+no Recent zone any more (removed
 2026-10): In work holds the works in progress, and the list by time answers
 "what was I doing" across projects. Chats use
 their shared managed root for folders and never expose worktree actions. Project

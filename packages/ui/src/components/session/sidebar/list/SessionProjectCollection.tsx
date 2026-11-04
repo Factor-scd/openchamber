@@ -788,16 +788,18 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     switch (section.kind) {
       case 'chats':
       case 'pinned':
-        return { kind: section.kind };
+        return { kind: section.kind, depth: section.depth };
       case 'work':
-        return { kind: 'work' };
+        return { kind: 'work', depth: section.depth };
       case 'projects':
-        return { kind: 'projects', excludedProjectIds: membership.claimedProjectIds };
+        return { kind: 'projects', excludedProjectIds: membership.claimedProjectIds, depth: section.depth };
       case 'custom': {
         const { section: definition, preview } = section;
         return definition.grouping === 'project'
-          ? { kind: 'project-group', id: definition.id, name: definition.name, projectIds: membership.projectGroups.get(definition.id) ?? [], hideWhenEmpty: definition.hideWhenEmpty, preview }
-          : { kind: 'custom', id: definition.id, name: definition.name, entries: customEntries.get(definition.id) ?? EMPTY_WORK_ENTRIES, hideWhenEmpty: definition.hideWhenEmpty, preview };
+          ? { kind: 'project-group', id: definition.id, name: definition.name, projectIds: membership.projectGroups.get(definition.id) ?? [], hideWhenEmpty: definition.hideWhenEmpty, preview, depth: section.depth }
+          : definition.grouping === 'section'
+            ? { kind: 'custom', id: definition.id, name: definition.name, entries: EMPTY_WORK_ENTRIES, hideWhenEmpty: definition.hideWhenEmpty, preview, depth: section.depth }
+            : { kind: 'custom', id: definition.id, name: definition.name, entries: customEntries.get(definition.id) ?? EMPTY_WORK_ENTRIES, hideWhenEmpty: definition.hideWhenEmpty, preview, depth: section.depth };
       }
     }
   }), [customEntries, membership.claimedProjectIds, membership.projectGroups, visibleSections]);
@@ -1225,6 +1227,7 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     sessionBatchSize: singleProjectMode && !view.useGroupedSections ? 20 : undefined,
     runIndex,
     blocks: sidebarBlocks,
+    showChildSections: blockDrag === 'section',
   }), [blockDrag, sidebarBlocks, runIndex, archivedChatGroup, chatGroup, showChatsSection, rowCollapsedActivities, pinnedItems, pinnedWorktreeEntries, workEntries, timeEntries, draftPlacement, movedSessionIds, movedGroupKeys, zoneSessionIds, detailedZoneRows, collapsedFolderIds, collection.pinnedSessionIds, expandedParents, folderAuthorityByOwner, foldersMap, groupSearchDataByGroup, groupStatusByKey, orderedSectionsForRender, ownership.bySessionId, projectSections, collapsedGroups, rowCollapsedProjects, selectedSingleProjectId, sessionOrderIndex, singleProjectMode, view.activeProjectId, view.hasSessionSearchQuery, view.hideDirectoryControls, view.normalizedSessionSearchQuery, view.showOnlyMainWorkspace, view.useGroupedSections, visibleCountByContainer, worktreeArchiveAnchors, liveSpaceIds]);
   React.useEffect(() => {
     onSearchMatchCountChange(sidebarRowModel.searchMatchCount);

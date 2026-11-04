@@ -70,13 +70,21 @@ export const useRowDragSensors = ({ keyboard = false }: { keyboard?: boolean } =
  * sorts in. Measured from where the row was picked up, which is where the
  * transform starts from, even after the list folds under it.
  */
-export const keepRowInList: Modifier = ({ transform, active, scrollableAncestorRects }) => {
+/**
+ * A lifted row moves up and down between the list's ends. `limitPx` is how far
+ * it may lean sideways: 0 keeps it straight, and the sections manager lets a
+ * row lean right to nest and left to lift out.
+ */
+export const keepRowInListWithNest = (limitPx: number): Modifier => ({ transform, active, scrollableAncestorRects }) => {
   const list = scrollableAncestorRects[0];
   const picked = active?.rect.current.initial;
-  if (!picked || !list) return { ...transform, x: 0 };
+  const x = limitPx === 0 ? 0 : Math.min(Math.max(transform.x, -limitPx), limitPx);
+  if (!picked || !list) return { ...transform, x };
   const y = Math.min(Math.max(transform.y, list.top - picked.top), list.bottom - picked.bottom);
-  return { ...transform, x: 0, y };
+  return { ...transform, x, y };
 };
+
+export const keepRowInList: Modifier = keepRowInListWithNest(0);
 
 /** The list scrolls only near its very edge while a row is held there, and gathers speed. */
 export const ROW_DRAG_AUTO_SCROLL: AutoScrollOptions = { threshold: { x: 0, y: 0.08 }, acceleration: 8 };

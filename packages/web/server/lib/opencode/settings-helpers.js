@@ -35,12 +35,12 @@ const sidebarIds = sidebarIdList(sidebarSectionIdSchema);
 // A project's id names its folder (`path_` and the path encoded), so it grows with the path.
 const sidebarProjectIds = sidebarIdList(z.string().trim().min(1).max(4096));
 const sidebarSectionSchema = z.union([
-  z.object({ kind: z.literal('builtin'), id: z.enum(SIDEBAR_BUILTIN_SECTION_IDS) }),
+  z.object({ kind: z.literal('builtin'), id: z.enum(SIDEBAR_BUILTIN_SECTION_IDS), parentId: sidebarSectionIdSchema.optional().catch(undefined) }),
   z.object({
     kind: z.literal('custom'),
     id: sidebarSectionIdSchema,
     name: sidebarSectionNameSchema,
-    grouping: z.enum(['time', 'project']).catch('time'),
+    grouping: z.enum(['time', 'project', 'section']).catch('time'),
     filter: z.object({
       states: sidebarChips(['running', 'needs-answer', 'unread', 'failed', 'looks-done']).catch([]),
       work: sidebarChips(['in-work', 'done']).catch([]),
@@ -59,8 +59,49 @@ const sidebarSectionSchema = z.union([
     }).partial().catch({}),
     claims: z.boolean().catch(false),
     hideWhenEmpty: z.boolean().catch(true),
+    // One level of nesting: a section may sit under a top-level one.
+    parentId: sidebarSectionIdSchema.optional().catch(undefined),
   }),
 ]);
+
+/**
+ * Keeps each child directly after its parent, one level deep, as the UI's
+ * normalizer does. A parent id that names nothing in the list, the entry
+ * itself, Projects or another child makes that entry top-level.
+ */
+const placeSidebarSections = (entries) => {
+  const byId = new Map(entries.map((entry) => [entry.id, entry]));
+  const parentByChild = new Map();
+  for (const entry of entries) {
+    // Projects is the catch-all and never a child.
+    if (entry.kind === 'builtin' && entry.id === 'projects') continue;
+    const parentId = entry.parentId;
+    if (!parentId || parentId === entry.id || parentId === 'projects') continue;
+    if (!byId.has(parentId)) continue;
+    parentByChild.set(entry.id, parentId);
+  }
+  for (const [childId, parentId] of parentByChild) {
+    if (parentByChild.has(parentId)) parentByChild.delete(childId);
+  }
+  const childrenByParent = new Map();
+  for (const entry of entries) {
+    const parentId = parentByChild.get(entry.id);
+    if (!parentId) continue;
+    const children = childrenByParent.get(parentId) ?? [];
+    children.push(entry);
+    childrenByParent.set(parentId, children);
+  }
+  const placedEntry = (entry, parentId) => {
+    const placed = { ...entry };
+    if (parentId) placed.parentId = parentId;
+    else delete placed.parentId;
+    return placed;
+  };
+  return entries.flatMap((entry) => {
+    if (parentByChild.has(entry.id)) return [];
+    return [placedEntry(entry, null), ...(childrenByParent.get(entry.id) ?? []).map((child) => placedEntry(child, entry.id))];
+  });
+};
 
 const sanitizeSidebarSections = (entries) => {
   const result = [];
@@ -72,7 +113,7 @@ const sanitizeSidebarSections = (entries) => {
     seen.add(parsed.data.id);
     result.push(parsed.data);
   }
-  return result;
+  return placeSidebarSections(result);
 };
 
 const sanitizeSidebarPinLists = (entries) => {

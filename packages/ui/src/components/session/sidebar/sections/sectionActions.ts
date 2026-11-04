@@ -10,6 +10,7 @@ import {
   type SidebarSectionEntry,
 } from '@/lib/sidebarSections';
 import { useSessionDisplayStore } from '@/stores/useSessionDisplayStore';
+import { applySectionParent, liftSection } from './sectionNesting';
 
 /**
  * The sections editor's state on this device, never stored: whether the
@@ -113,10 +114,26 @@ export const deleteSidebarPinList = (id: string): void => {
   if (sections.length !== store.sections.length || sections.some((entry, index) => entry !== store.sections[index])) saveSidebarSections(sections);
 };
 
+/**
+ * Deletes a section. Its children move up to the top level in its place, so a
+ * user who nested sections does not lose them when the parent goes.
+ */
 export const deleteSidebarSection = (id: string): void => {
-  saveSidebarSections(useSessionDisplayStore.getState().sections.filter((entry) => entry.kind !== 'custom' || entry.id !== id));
+  const sections = useSessionDisplayStore.getState().sections;
+  const next = sections.flatMap((entry): SidebarSectionEntry[] => {
+    if (entry.kind === 'custom' && entry.id === id) return [];
+    return entry.parentId === id ? [liftSection(entry)] : [entry];
+  });
+  if (next.length !== sections.length || next.some((entry, index) => entry !== sections[index])) saveSidebarSections(next);
   const hidden = useSessionDisplayStore.getState().hiddenSections;
   if (hidden.includes(id)) setSidebarSectionHidden(id, false);
+};
+
+/** Places a section under another, or lifts it to the top level after its parent. */
+export const setSectionParent = (id: string, parentId: string | undefined): void => {
+  const sections = useSessionDisplayStore.getState().sections;
+  const next = applySectionParent(sections, id, parentId);
+  if (next !== sections) saveSidebarSections([...next]);
 };
 
 const insertAfterPinned = (sections: readonly SidebarSectionEntry[], section: SidebarSectionEntry): SidebarSectionEntry[] => {

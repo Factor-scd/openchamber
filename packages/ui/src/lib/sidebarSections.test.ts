@@ -63,6 +63,48 @@ describe('sidebarSectionsSchema', () => {
     expect(textOf('l')).toEqual(['relay', 'mobile']);
     expect(textOf('o')).toEqual([]);
   });
+
+  test('keeps a child under its parent and re-emits it directly after it', () => {
+    const sections = sidebarSectionsSchema.parse([
+      { kind: 'custom', id: 'child', name: 'Child', parentId: 'parent' },
+      { kind: 'custom', id: 'parent', name: 'Parent', grouping: 'section' },
+      { kind: 'custom', id: 'last', name: 'Last' },
+    ]);
+    expect(sections.filter((entry) => ['parent', 'child', 'last'].includes(entry.id)).map((entry) => [entry.id, entry.parentId])).toEqual([
+      ['parent', undefined],
+      ['child', 'parent'],
+      ['last', undefined],
+    ]);
+  });
+
+  test('drops a parent id that cannot be placed', () => {
+    const sections = sidebarSectionsSchema.parse([
+      { kind: 'custom', id: 'parent', name: 'Parent', grouping: 'section' },
+      { kind: 'custom', id: 'orphan', name: 'Orphan', parentId: 'gone' },
+      { kind: 'custom', id: 'self', name: 'Self', parentId: 'self' },
+      { kind: 'custom', id: 'underProjects', name: 'Under Projects', parentId: 'projects' },
+      { kind: 'custom', id: 'child', name: 'Child', parentId: 'parent' },
+      { kind: 'custom', id: 'grandchild', name: 'Grandchild', parentId: 'child' },
+      { kind: 'builtin', id: 'projects', parentId: 'parent' },
+    ]);
+    const parentOf = (id: string) => sections.find((entry) => entry.id === id)?.parentId;
+    expect(parentOf('orphan')).toBeUndefined();
+    expect(parentOf('self')).toBeUndefined();
+    expect(parentOf('underProjects')).toBeUndefined();
+    expect(parentOf('child')).toBe('parent');
+    // One level: a child of a child is top-level.
+    expect(parentOf('grandchild')).toBeUndefined();
+    // Projects is the catch-all and never a child.
+    expect(parentOf('projects')).toBeUndefined();
+  });
+
+  test('a group of sections asks nothing and takes nothing', () => {
+    const entry = sidebarSectionsSchema.parse([
+      { kind: 'custom', id: 'group', name: 'Group', grouping: 'section', filter: { states: ['running'], projectIds: ['p1'] }, claims: true },
+    ]).find((section) => section.id === 'group');
+    expect(entry?.kind === 'custom' ? entry.filter : null).toEqual(EMPTY_SIDEBAR_SECTION_FILTER);
+    expect(entry?.kind === 'custom' ? entry.claims : null).toBe(false);
+  });
 });
 
 describe('sidebarPinListsSchema', () => {

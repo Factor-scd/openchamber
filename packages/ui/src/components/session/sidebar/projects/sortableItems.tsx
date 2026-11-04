@@ -18,6 +18,7 @@ import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { useI18n } from '@/lib/i18n';
 import { CrossfadeZoneHeader } from './CrossfadeZoneHeaders';
 import { useProjectFolderMissing } from './useProjectFolderMissing';
+import { sectionCaptionInset } from '../sessions/sessionTreeGeometry';
 
 type ProjectIdentityProps = {
   id: string;
@@ -110,6 +111,8 @@ const ProjectHeaderIdentity: React.FC<ProjectHeaderIdentityProps> = ({
 
 interface SortableProjectItemProps extends ProjectIdentityProps {
   disabled?: boolean;
+  /** The project's nesting level: a project under a child section sits one step in. */
+  depth?: number;
   /**
    * The projects this one sorts among: those under the same caption, Projects
    * or a group of projects. A drag only lands among them.
@@ -149,6 +152,7 @@ interface SortableProjectItemProps extends ProjectIdentityProps {
 export const SortableProjectItem: React.FC<SortableProjectItemProps> = ({
   id,
   disabled = false,
+  depth = 0,
   sortGroup = 'projects',
   projectLabel,
   projectDescription,
@@ -336,7 +340,8 @@ export const SortableProjectItem: React.FC<SortableProjectItemProps> = ({
                 the project from its toggle. */}
             <div
               ref={setActivatorNodeRef}
-              className={cn('relative flex items-center gap-1 py-1 ps-4 pe-3.5', !disabled && 'cursor-grab active:cursor-grabbing')}
+              style={{ paddingInlineStart: sectionCaptionInset(depth) }}
+              className={cn('relative flex items-center gap-1 py-1 pe-3.5', !disabled && 'cursor-grab active:cursor-grabbing')}
               {...attributes}
               {...listeners}
             >

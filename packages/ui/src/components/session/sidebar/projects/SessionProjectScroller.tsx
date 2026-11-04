@@ -347,6 +347,7 @@ function SessionProjectScrollerComponent({ model, view, actions }: SessionProjec
           collapsed={row.collapsed}
           forceExpanded={row.forceExpanded}
           alwaysShowActions={view.alwaysShowActions}
+          depth={row.depth}
           onToggle={() => toggleActivityZone(row, { model, actions })}
           onNewChat={() => {
             useUIStore.getState().closeMainSurfaces();
@@ -363,6 +364,7 @@ function SessionProjectScrollerComponent({ model, view, actions }: SessionProjec
       return <SortableProjectItem
         id={project.id}
         sortGroup={sortGroup}
+        depth={row.depth}
         // A group of projects keeps the order the user gives it, whatever the
         // projects' sort; Projects sorts by hand only when sorted manually.
         disabled={model.singleProjectMode || row.forceExpanded || model.state.editingId !== null
@@ -541,6 +543,7 @@ function SessionProjectScrollerComponent({ model, view, actions }: SessionProjec
         collapsed={row.collapsed}
         forceExpanded={row.forceExpanded}
         alwaysShowActions={view.alwaysShowActions}
+        depth={row.depth}
         onToggle={() => toggleProjectsCaption(row, { model })}
       />);
     }

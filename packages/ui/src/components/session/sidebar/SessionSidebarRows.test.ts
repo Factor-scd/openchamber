@@ -90,6 +90,18 @@ describe('SessionSidebarRows section spacing', () => {
     expect(closed.some((row) => row.kind === 'project-header')).toBe(false);
   });
 
+  test('a child section draws its caption and rows inside its parent', () => {
+    const parent = { kind: 'custom' as const, id: 'parent', name: 'Parent', entries: [], hideWhenEmpty: false, preview: false, depth: 0 };
+    const child = { kind: 'custom' as const, id: 'child', name: 'Child', entries: [{ kind: 'session' as const, item: item('working') }], hideWhenEmpty: true, preview: false, depth: 1 };
+    const rows = buildSessionSidebarRowModel({ ...input(false), zoneSessionIds: new Set(), blocks: [parent, child] }).rows;
+    expect(rows.map((row) => (
+      row.kind === 'activity-header' ? `caption:${row.label}:${row.depth}`
+        : row.kind === 'session' ? `session:${row.node.session.id}:${row.depth}`
+          : row.kind === 'empty' ? 'empty'
+            : row.kind
+    ))).toEqual(['caption:Parent:0', 'caption:Child:1', 'session:working:1']);
+  });
+
   test('a row that ends a section is estimated as its siblings plus its gap', () => {
     const rows = buildSessionSidebarRowModel(input(true)).rows;
     const lastBeforeProjects = rows.findIndex((row) => row.kind === 'project-header') - 1;

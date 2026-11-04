@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
 import type { SessionSidebarActivityKey } from './sessionSidebarRowModel';
 import { ACTIVITY_TITLE_KEY, isBuiltinActivityKey } from './sessionSidebarActivityLabels';
+import { sectionCaptionInset } from './sessions/sessionTreeGeometry';
 
 /** The mark on the section being edited, which the sidebar draws as it stands. */
 const PreviewMark: React.FC = () => {
@@ -22,9 +23,11 @@ export const SessionSidebarActivityHeader: React.FC<{
   collapsed: boolean;
   forceExpanded: boolean;
   alwaysShowActions: boolean;
+  /** Its nesting level; a child caption sits one step in, over its own rows. */
+  depth: number;
   onToggle: () => void;
   onNewChat: () => void;
-}> = ({ activityKey, label, preview = false, collapsed, forceExpanded, alwaysShowActions, onToggle, onNewChat }) => {
+}> = ({ activityKey, label, preview = false, collapsed, forceExpanded, alwaysShowActions, depth, onToggle, onNewChat }) => {
   const { t } = useI18n();
   const chats = activityKey === 'chats';
   // One header for every zone, so zones line up with the project headers.
@@ -35,7 +38,8 @@ export const SessionSidebarActivityHeader: React.FC<{
       disabled={forceExpanded}
       // The caption's own toggle: pressing it can lift the section (`rowDrag`).
       data-row-drag=""
-      className={cn('group flex w-full items-center gap-1 py-1 ps-4 text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50', chats ? 'pe-10' : 'pe-3.5')}
+      style={{ paddingInlineStart: sectionCaptionInset(depth) }}
+      className={cn('group flex w-full items-center gap-1 py-1 text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50', chats ? 'pe-10' : 'pe-3.5')}
       aria-expanded={!collapsed}
     >
       {/* A zone's label is a bare muted word with room above it, so it reads
@@ -75,8 +79,10 @@ export const SessionSidebarCaption: React.FC<{
   collapsed: boolean;
   forceExpanded: boolean;
   alwaysShowActions: boolean;
+  /** Its nesting level; a child caption sits one step in, over its own rows. */
+  depth: number;
   onToggle: () => void;
-}> = ({ label, preview = false, collapsed, forceExpanded, alwaysShowActions, onToggle }) => {
+}> = ({ label, preview = false, collapsed, forceExpanded, alwaysShowActions, depth, onToggle }) => {
   const { t } = useI18n();
   return <div className="relative -ms-2.5 -me-2">
     <button
@@ -85,7 +91,8 @@ export const SessionSidebarCaption: React.FC<{
       disabled={forceExpanded}
       // The caption's own toggle: pressing it can lift the section (`rowDrag`).
       data-row-drag=""
-      className="group flex w-full items-center gap-1 py-1 ps-4 pe-3.5 text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+      style={{ paddingInlineStart: sectionCaptionInset(depth) }}
+      className="group flex w-full items-center gap-1 py-1 pe-3.5 text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
       aria-expanded={!collapsed}
     >
       <span className="min-w-0 truncate typography-ui-label font-medium text-muted-foreground" dir="auto">

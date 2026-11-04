@@ -11,18 +11,23 @@ import type { SidebarWorkRef } from '../works/sidebarWorks';
 /**
  * A section the sidebar draws, in order. `claims`: it takes its works out of
  * their projects; a group of projects always takes its projects from Projects. `preview`: the section being edited, drawn as it stands.
+ * `depth`: 0 for a top-level section, 1 for one placed under a parent.
  */
-export type VisibleSidebarSection =
+export type VisibleSidebarSection = (
   | { kind: 'chats' }
   | { kind: 'pinned' }
   | { kind: 'work'; claims: boolean }
   | { kind: 'custom'; section: CustomSidebarSection; preview: boolean }
-  | { kind: 'projects' };
+  | { kind: 'projects' }
+) & { depth: 0 | 1 };
 
 /**
- * The sections a surface draws, in the saved order. The built-in ones follow
- * their show toggles; the user's follow the surface's hidden list, and the
- * section being edited shows whatever the list says (a new one under Pinned).
+ * The sections a surface draws, in the saved order, each child after its
+ * parent. The built-in ones follow their show toggles; the user's follow the
+ * surface's hidden list, and the section being edited shows whatever the list
+ * says (a new one under Pinned). A hidden parent takes its children with it:
+ * a container that is off is off. Where the user's sections do not apply
+ * (VS Code) a built-in child is drawn at the top level in its stored place.
  */
 export const resolveVisibleSidebarSections = ({
   sections,
@@ -45,21 +50,45 @@ export const resolveVisibleSidebarSections = ({
   const entries: SidebarSectionEntry[] = [...sections];
   if (customSections && draft && draftIsNew) {
     const pinnedIndex = entries.findIndex((entry) => entry.kind === 'builtin' && entry.id === 'pinned');
-    entries.splice(pinnedIndex >= 0 ? pinnedIndex + 1 : 0, 0, draft);
+    // After Pinned and anything placed under it, so a child stays directly after its parent.
+    let at = pinnedIndex >= 0 ? pinnedIndex + 1 : 0;
+    while (entries[at]?.parentId === 'pinned') at += 1;
+    entries.splice(at, 0, draft);
   }
   const hidden = new Set(hiddenSections);
-  return entries.flatMap((entry): VisibleSidebarSection[] => {
+  const shownBuiltin = (id: BuiltinSidebarSectionId): boolean => {
+    switch (id) {
+      case 'chats': return show.chats;
+      case 'pinned': return show.pinned;
+      case 'work': return show.work;
+      case 'projects': return true;
+    }
+  };
+  const isShown = (entry: SidebarSectionEntry): boolean => (
+    entry.kind === 'builtin' ? shownBuiltin(entry.id) : !hidden.has(entry.id)
+  );
+  const hiddenParents = new Set(entries.flatMap((entry) => (
+    entry.parentId === undefined && !isShown(entry) ? [entry.id] : []
+  )));
+  const visibleEntry = (entry: SidebarSectionEntry, depth: 0 | 1): VisibleSidebarSection[] => {
     if (entry.kind === 'builtin') {
       switch (entry.id) {
-        case 'chats': return show.chats ? [{ kind: 'chats' }] : [];
-        case 'pinned': return show.pinned ? [{ kind: 'pinned' }] : [];
-        case 'work': return show.work ? [{ kind: 'work', claims: !keepWorkInPlace }] : [];
-        case 'projects': return [{ kind: 'projects' }];
+        case 'chats': return show.chats ? [{ kind: 'chats', depth }] : [];
+        case 'pinned': return show.pinned ? [{ kind: 'pinned', depth }] : [];
+        case 'work': return show.work ? [{ kind: 'work', claims: !keepWorkInPlace, depth }] : [];
+        case 'projects': return [{ kind: 'projects', depth: 0 }];
       }
     }
     if (!customSections) return [];
-    if (draft && draft.id === entry.id) return [{ kind: 'custom', section: draft, preview: true }];
-    return hidden.has(entry.id) ? [] : [{ kind: 'custom', section: entry, preview: false }];
+    if (draft && draft.id === entry.id) return [{ kind: 'custom', section: draft, preview: true, depth }];
+    return hidden.has(entry.id) ? [] : [{ kind: 'custom', section: entry, preview: false, depth }];
+  };
+  return entries.flatMap((entry): VisibleSidebarSection[] => {
+    if (entry.parentId !== undefined) {
+      if (!isShown(entry) || hiddenParents.has(entry.parentId)) return [];
+      return visibleEntry(entry, customSections ? 1 : 0);
+    }
+    return visibleEntry(entry, 0);
   });
 };
 
@@ -85,7 +114,8 @@ type SidebarSectionMembership = {
  * matches, so one work can show in several; a section that takes its works
  * (`claims`) takes them out of their projects only. Pinned and In work keep
  * taking works from each other by their order, and a group of projects takes
- * its projects from the Projects section.
+ * its projects from the Projects section. A parent's children count at the
+ * parent's place in the order, so a work one of them shows first stays there.
  */
 export const resolveSidebarSectionMembership = ({
   sections,
@@ -150,6 +180,11 @@ export const resolveSidebarSectionMembership = ({
           const ids = definition.filter.projectIds.filter((id) => projectIds.has(id) && !claimedProjectIds.has(id));
           projectGroups.set(definition.id, ids);
           ids.forEach((id) => claimedProjectIds.add(id));
+          continue;
+        }
+        // A group of sections is a caption for what sits under it and lists nothing itself.
+        if (definition.grouping === 'section') {
+          custom.set(definition.id, []);
           continue;
         }
         // The user's sections show every work that matches, whatever the

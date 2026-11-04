@@ -14,7 +14,7 @@ const section = (id: string, overrides: Partial<CustomSidebarSection> = {}): Cus
   kind: 'custom', id, name: id, grouping: 'time', filter: EMPTY_SIDEBAR_SECTION_FILTER, claims: false, hideWhenEmpty: true, ...overrides,
 });
 
-const custom = (definition: CustomSidebarSection): VisibleSidebarSection => ({ kind: 'custom', section: definition, preview: false });
+const custom = (definition: CustomSidebarSection, depth: 0 | 1 = 0): VisibleSidebarSection => ({ kind: 'custom', section: definition, preview: false, depth });
 
 describe('resolveSidebarSectionMembership', () => {
   const running = new Set(['a', 'b']);
@@ -56,7 +56,7 @@ describe('resolveSidebarSectionMembership', () => {
   test('a search lists a work once, in the first section that shows it', () => {
     const result = resolveSidebarSectionMembership({
       sections: [
-        { kind: 'work', claims: false },
+        { kind: 'work', claims: false, depth: 0 },
         custom(section('second', { filter: { ...EMPTY_SIDEBAR_SECTION_FILTER, states: ['running'] } })),
       ],
       pinned: [], work: [ref('a')], all: [ref('a'), ref('b')], projectIds: new Set(['p1']), factsOf, now: 1_000, search: true,
@@ -66,11 +66,11 @@ describe('resolveSidebarSectionMembership', () => {
   });
 
   test('Pinned above takes its works from In work below, and the order turned around gives them to In work', () => {
-    const above = resolve([{ kind: 'pinned' }, { kind: 'work', claims: true }], [ref('a')], [ref('a'), ref('b')]);
+    const above = resolve([{ kind: 'pinned', depth: 0 }, { kind: 'work', claims: true, depth: 0 }], [ref('a')], [ref('a'), ref('b')]);
     expect(above.pinned.map((work) => work.key)).toEqual(['session:a']);
     expect(above.work.map((work) => work.key)).toEqual(['session:b']);
 
-    const below = resolve([{ kind: 'work', claims: true }, { kind: 'pinned' }], [ref('a')], [ref('a'), ref('b')]);
+    const below = resolve([{ kind: 'work', claims: true, depth: 0 }, { kind: 'pinned', depth: 0 }], [ref('a')], [ref('a'), ref('b')]);
     expect(below.work.map((work) => work.key)).toEqual(['session:a', 'session:b']);
     expect(below.pinned).toEqual([]);
   });
@@ -100,10 +100,10 @@ describe('resolveVisibleSidebarSections', () => {
       customSections: true,
     });
     expect(visible).toEqual([
-      { kind: 'chats' },
-      { kind: 'custom', section: draft, preview: true },
-      { kind: 'work', claims: false },
-      { kind: 'projects' },
+      { kind: 'chats', depth: 0 },
+      { kind: 'custom', section: draft, preview: true, depth: 0 },
+      { kind: 'work', claims: false, depth: 0 },
+      { kind: 'projects', depth: 0 },
     ]);
   });
 
@@ -112,6 +112,60 @@ describe('resolveVisibleSidebarSections', () => {
       sections: [section('mine'), { kind: 'builtin', id: 'projects' }],
       hiddenSections: [], draft: null, draftIsNew: false, show, keepWorkInPlace: false, customSections: false,
     });
-    expect(visible).toEqual([{ kind: 'projects' }]);
+    expect(visible).toEqual([{ kind: 'projects', depth: 0 }]);
+  });
+
+  test('a child is drawn after its parent at depth 1', () => {
+    const parent = section('parent', { grouping: 'section' });
+    const child = section('child', { parentId: 'parent' });
+    const visible = resolveVisibleSidebarSections({
+      sections: [{ kind: 'builtin', id: 'projects' }, parent, child],
+      hiddenSections: [], draft: null, draftIsNew: false, show, keepWorkInPlace: true, customSections: true,
+    });
+    expect(visible.map((entry) => [entry.kind, 'depth' in entry ? entry.depth : null])).toEqual([
+      ['projects', 0],
+      ['custom', 0],
+      ['custom', 1],
+    ]);
+  });
+
+  test('a hidden parent hides its children, and a hidden child leaves its parent alone', () => {
+    const parent = section('parent', { grouping: 'section' });
+    const child = section('child', { parentId: 'parent' });
+    const sibling = section('sibling', { parentId: 'parent' });
+    const hiddenParent = resolveVisibleSidebarSections({
+      sections: [parent, child, sibling], hiddenSections: ['parent'], draft: null, draftIsNew: false, show, keepWorkInPlace: true, customSections: true,
+    });
+    expect(hiddenParent).toEqual([]);
+    const hiddenChild = resolveVisibleSidebarSections({
+      sections: [parent, child, sibling], hiddenSections: ['child'], draft: null, draftIsNew: false, show, keepWorkInPlace: true, customSections: true,
+    });
+    expect(hiddenChild.map((entry) => (entry.kind === 'custom' ? entry.section.id : entry.kind))).toEqual(['parent', 'sibling']);
+  });
+
+  test('without the user\'s sections a built-in child is drawn at the top level', () => {
+    const parent = section('parent', { grouping: 'section' });
+    const visible = resolveVisibleSidebarSections({
+      sections: [parent, { kind: 'builtin', id: 'chats', parentId: 'parent' }, { kind: 'builtin', id: 'projects' }],
+      hiddenSections: [], draft: null, draftIsNew: false, show, keepWorkInPlace: true, customSections: false,
+    });
+    expect(visible).toEqual([{ kind: 'chats', depth: 0 }, { kind: 'projects', depth: 0 }]);
+  });
+});
+
+describe('a group of sections in membership', () => {
+  test('lists nothing itself and takes nothing from the sections under it', () => {
+    const result = resolveSidebarSectionMembership({
+      sections: [
+        custom(section('group', { grouping: 'section' })),
+        custom(section('mine', { claims: true, filter: { ...EMPTY_SIDEBAR_SECTION_FILTER, states: ['running'] } }), 1),
+      ],
+      pinned: [], work: [], all: [ref('a')], projectIds: new Set(['p1']),
+      factsOf: () => facts({ running: true }), now: 1_000, search: false,
+    });
+    expect(result.custom.get('group')).toEqual([]);
+    expect(result.custom.get('mine')?.map((work) => work.key)).toEqual(['session:a']);
+    // The group itself takes nothing; the child under it still claims its works.
+    expect([...result.claimedKeys]).toEqual(['session:a']);
   });
 });

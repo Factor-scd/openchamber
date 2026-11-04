@@ -1,7 +1,7 @@
 import React from 'react';
 import { Popover } from '@base-ui/react/popover';
 import { DndContext, closestCenter, type DragEndEvent } from '@dnd-kit/core';
-import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Icon } from '@/components/icon/Icon';
 import { Button } from '@/components/ui/button';
@@ -46,7 +46,7 @@ import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useSessionDisplayStore } from '@/stores/useSessionDisplayStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useProjectsInSidebarOrder } from '../list/useProjectsInSidebarOrder';
-import { keepRowInList, ROW_DRAG_AUTO_SCROLL, ROW_SORT_TRANSITION, useRowDragSensors } from '../rowDrag';
+import { keepRowInListWithNest, ROW_DRAG_AUTO_SCROLL, ROW_SORT_TRANSITION, useRowDragSensors } from '../rowDrag';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import {
   canAddSidebarSection,
@@ -57,10 +57,12 @@ import {
   discardSectionDraft,
   editSection,
   saveSidebarSections,
+  setSectionParent,
   setSidebarSectionHidden,
   updateSectionDraft,
   useSidebarSectionsUiStore,
 } from './sectionActions';
+import { applySectionDrop, nearestParentSection, type SectionDropIntent } from './sectionNesting';
 
 const BUILTIN_TITLE_KEY = {
   chats: 'sessions.sidebar.activity.chatsTitle',
@@ -76,6 +78,7 @@ const TEMPLATE_KEY = {
   stalled: 'sessions.sidebar.sections.template.stalled',
   today: 'sessions.sidebar.sections.template.today',
   projects: 'sessions.sidebar.sections.template.projects',
+  sectionGroup: 'sessions.sidebar.sections.template.sectionGroup',
   blank: 'sessions.sidebar.sections.template.blank',
 } as const satisfies Record<SidebarSectionTemplate, I18nKey>;
 
@@ -113,6 +116,9 @@ const ACTIVITY_KEY = {
 } as const satisfies Record<SidebarSectionActivity, I18nKey>;
 
 const SECTIONS_PANEL_CLASS = 'oc-surface-floating oc-glass-floating oc-popup-motion app-region-no-drag rounded-xl origin-[var(--transform-origin)] data-[starting-style]:opacity-0 data-[starting-style]:scale-95 data-[ending-style]:opacity-0 data-[ending-style]:scale-95';
+
+/** One step of nesting in the manager's list, the sidebar tree's own step. */
+const NEST_STEP_PX = 14;
 
 const toggleIn = <T extends string>(list: readonly T[], value: T): T[] => (
   list.includes(value) ? list.filter((entry) => entry !== value) : [...list, value]
@@ -168,12 +174,13 @@ const SectionList: React.FC = () => {
   const pinLists = useSessionDisplayStore((state) => state.pinLists);
   const sensors = useRowDragSensors();
   const onDragEnd = (event: DragEndEvent): void => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const from = sections.findIndex((entry) => entry.id === active.id);
-    const to = sections.findIndex((entry) => entry.id === over.id);
-    if (from < 0 || to < 0) return;
-    saveSidebarSections(arrayMove(sections, from, to));
+    const { active, over, delta } = event;
+    if (!over) return;
+    // Leaning right over a row means nest, left means lift out, straight stays
+    // at its own level; the row leans by at most one step either way.
+    const intent: SectionDropIntent = delta.x > NEST_STEP_PX / 2 ? 'nest' : delta.x < -NEST_STEP_PX / 2 ? 'out' : 'keep';
+    const next = applySectionDrop(sections, String(active.id), String(over.id), intent);
+    if (next !== sections) saveSidebarSections([...next]);
   };
   return (
     <ScrollableOverlay outerClassName="min-h-0" className="flex flex-col gap-3 p-3" disableHorizontal>
@@ -198,6 +205,9 @@ const SectionList: React.FC = () => {
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => editSection(createSidebarSectionFromTemplate('projects', t(TEMPLATE_KEY.projects)), true)}>
               {t(TEMPLATE_KEY.projects)}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => editSection(createSidebarSectionFromTemplate('sectionGroup', t(TEMPLATE_KEY.sectionGroup)), true)}>
+              {t(TEMPLATE_KEY.sectionGroup)}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => editSection(createSidebarSectionFromTemplate('blank', t('sessions.sidebar.sections.customName')), true)}>
               {t(TEMPLATE_KEY.blank)}
@@ -231,12 +241,13 @@ const SectionList: React.FC = () => {
   );
 };
 
-const SECTION_LIST_MODIFIERS = [keepRowInList];
+const SECTION_LIST_MODIFIERS = [keepRowInListWithNest(NEST_STEP_PX)];
 
 /** One section in the list: its name and what can be done with it here; the row drags anywhere but its controls. */
 const SectionRow: React.FC<{ entry: SidebarSectionEntry }> = ({ entry }) => {
   const { t } = useI18n();
   const { listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: entry.id, transition: ROW_SORT_TRANSITION });
+  const sections = useSessionDisplayStore((state) => state.sections);
   const hiddenSections = useSessionDisplayStore((state) => state.hiddenSections);
   const showChats = useSessionDisplayStore((state) => state.showChatsSection);
   const showPinned = useSessionDisplayStore((state) => state.showPinnedSection);
@@ -244,6 +255,15 @@ const SectionRow: React.FC<{ entry: SidebarSectionEntry }> = ({ entry }) => {
   const keepWorkInPlace = useSessionDisplayStore((state) => state.keepWorkInPlace);
   const sessionWorkEnabled = useUIStore((state) => state.sessionWorkEnabled);
   const name = entry.kind === 'builtin' ? t(BUILTIN_TITLE_KEY[entry.id]) : entry.name;
+  const sectionName = (other: SidebarSectionEntry): string => (other.kind === 'builtin' ? t(BUILTIN_TITLE_KEY[other.id]) : other.name);
+  const parentEntry = entry.parentId === undefined ? undefined : sections.find((other) => other.id === entry.parentId);
+  // One level, and Projects is the catch-all: a row that already holds
+  // children, or is Projects, has no "Move under" to offer.
+  const holdsChildren = sections.some((other) => other.parentId === entry.id);
+  const canNest = entry.parentId === undefined && !holdsChildren && !(entry.kind === 'builtin' && entry.id === 'projects');
+  // The top-level row above this one is where "Move under" places it; a child
+  // only needs the way back out.
+  const nestingTarget = canNest ? nearestParentSection(sections, entry.id) : undefined;
   // Built-in sections keep the show toggles they always had; Projects is always shown.
   let visibility: { shown: boolean; set: (shown: boolean) => void } | null = null;
   if (entry.kind === 'custom') {
@@ -259,7 +279,11 @@ const SectionRow: React.FC<{ entry: SidebarSectionEntry }> = ({ entry }) => {
   return (
     <div
       ref={setNodeRef}
-      style={{ transform: CSS.Translate.toString(transform), transition }}
+      style={{
+        transform: CSS.Translate.toString(transform),
+        transition,
+        paddingInlineStart: entry.parentId === undefined ? undefined : NEST_STEP_PX,
+      }}
       className={cn('flex cursor-grab touch-pan-y select-none flex-col rounded-md active:cursor-grabbing', isDragging && 'oc-tile relative z-10 cursor-grabbing')}
       {...listeners}
     >
@@ -300,6 +324,29 @@ const SectionRow: React.FC<{ entry: SidebarSectionEntry }> = ({ entry }) => {
         ) : null}
         {visibility ? (
           <Switch size="sm" checked={visibility.shown} onCheckedChange={visibility.set} aria-label={t('sessions.sidebar.sections.show', { name })} />
+        ) : null}
+        {/* Dragging sideways is the pointer's way to nest; the menu is the
+            keyboard's, and both write the same placement. */}
+        {nestingTarget || parentEntry ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="size-6" aria-label={t('sessions.sidebar.sections.actions', { name })}>
+                <Icon name="more-2" className="size-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-[180px]">
+              {nestingTarget ? (
+                <DropdownMenuItem onClick={() => setSectionParent(entry.id, nestingTarget.id)}>
+                  {t('sessions.sidebar.sections.nest', { name: sectionName(nestingTarget) })}
+                </DropdownMenuItem>
+              ) : null}
+              {parentEntry ? (
+                <DropdownMenuItem onClick={() => setSectionParent(entry.id, undefined)}>
+                  {t('sessions.sidebar.sections.unnest', { name: sectionName(parentEntry) })}
+                </DropdownMenuItem>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
         ) : null}
       </div>
     </div>
@@ -371,6 +418,7 @@ const SectionEditor: React.FC<{ draft: CustomSidebarSection }> = ({ draft }) => 
   const [phraseDraft, setPhraseDraft] = React.useState<string | null>(null);
   const nameId = React.useId();
   const byProjects = draft.grouping === 'project';
+  const bySections = draft.grouping === 'section';
   const optionsOf = (category: ConditionCategory): readonly ConditionOption[] => {
     switch (category) {
       case 'states': return SIDEBAR_SECTION_STATES.map((value) => ({ value, label: t(STATE_KEY[value]) }));
@@ -403,21 +451,25 @@ const SectionEditor: React.FC<{ draft: CustomSidebarSection }> = ({ draft }) => 
     updateSectionDraft({ ...draft, filter: clearCondition(draft.filter, category) });
   };
   // Only the conditions the section asks for are on screen; a group of
-  // projects asks for its projects alone, so that row is always there.
-  const categories: readonly ConditionCategory[] = byProjects ? ['projectIds'] : TIME_CATEGORIES;
+  // projects asks for its projects alone, so that row is always there. A group
+  // of sections asks nothing: it holds other sections.
+  const categories: readonly ConditionCategory[] = bySections ? [] : byProjects ? ['projectIds'] : TIME_CATEGORIES;
   const isShown = (category: ConditionCategory): boolean => (
     byProjects || conditionValues(draft.filter, category).length > 0 || (category === 'text' && phraseDraft !== null)
   );
-  const shown = byProjects ? categories : [
+  const shown = bySections ? [] : byProjects ? categories : [
     ...order.filter(isShown),
     ...categories.filter((category) => isShown(category) && !order.includes(category)),
   ];
-  const addable = byProjects ? [] : categories.filter((category) => !isShown(category));
+  const addable = byProjects || bySections ? [] : categories.filter((category) => !isShown(category));
   const name = draft.name.trim();
   // A section with nothing to ask lists nothing, so it is not saved until it asks something.
-  const hasConditions = byProjects ? draft.filter.projectIds.length > 0 : hasSidebarSectionConditions(draft.filter);
+  const hasConditions = bySections
+    ? true
+    : byProjects ? draft.filter.projectIds.length > 0 : hasSidebarSectionConditions(draft.filter);
   let countLabel: string | null = null;
-  if (!hasConditions) countLabel = byProjects ? t('sessions.sidebar.sections.needsProjects') : t('sessions.sidebar.sections.needsCondition');
+  if (bySections) countLabel = t('sessions.sidebar.sections.groupsSections');
+  else if (!hasConditions) countLabel = byProjects ? t('sessions.sidebar.sections.needsProjects') : t('sessions.sidebar.sections.needsCondition');
   else if (matchCount !== null) {
     if (byProjects) countLabel = matchCount === 1 ? t('sessions.sidebar.sections.matchProjectsSingle', { count: matchCount }) : t('sessions.sidebar.sections.matchProjectsPlural', { count: matchCount });
     else countLabel = matchCount === 1 ? t('sessions.sidebar.sections.matchWorksSingle', { count: matchCount }) : t('sessions.sidebar.sections.matchWorksPlural', { count: matchCount });
@@ -476,6 +528,7 @@ const SectionEditor: React.FC<{ draft: CustomSidebarSection }> = ({ draft }) => 
           options={[
             { value: 'time', label: t('sessions.sidebar.sections.grouping.time') },
             { value: 'project', label: t('sessions.sidebar.sections.grouping.project') },
+            { value: 'section', label: t('sessions.sidebar.sections.grouping.section') },
           ]}
           // Switching keeps every condition and the claims choice: a group of
           // projects reads only its projects, and saving one drops the rest.
@@ -483,7 +536,9 @@ const SectionEditor: React.FC<{ draft: CustomSidebarSection }> = ({ draft }) => 
         />
         {/* What the chosen kind lists, so the two need no explaining elsewhere. */}
         <p className="-mt-1 typography-micro text-muted-foreground">
-          {byProjects ? t('sessions.sidebar.sections.grouping.projectHint') : t('sessions.sidebar.sections.grouping.timeHint')}
+          {bySections
+            ? t('sessions.sidebar.sections.grouping.sectionHint')
+            : byProjects ? t('sessions.sidebar.sections.grouping.projectHint') : t('sessions.sidebar.sections.grouping.timeHint')}
         </p>
         <div className="flex flex-col gap-1">
           {shown.map((category) => {
@@ -626,8 +681,9 @@ const SectionEditor: React.FC<{ draft: CustomSidebarSection }> = ({ draft }) => 
           ) : null}
         </div>
         <div className="flex flex-col gap-2">
-          {/* A group of projects always takes its projects; only a list of works chooses. */}
-          {!byProjects ? (
+          {/* A group of projects always takes its projects and a group of
+              sections lists none; only a list of works chooses. */}
+          {!byProjects && !bySections ? (
             <label className="flex items-center gap-2 typography-ui-label">
               <span className="flex-1">{t('sessions.sidebar.sections.alsoInProjects')}</span>
               <Switch size="sm" checked={!draft.claims} onCheckedChange={(alsoInProjects) => updateSectionDraft({ ...draft, claims: !alsoInProjects })} />

@@ -854,6 +854,45 @@ describe('settings helpers', () => {
   });
 });
 
+describe('sidebar section nesting persistence', () => {
+  const save = (sections) => createTestHelpers().sanitizeSettingsUpdate({ sidebarSections: sections }).sidebarSections;
+  const layout = (sections) => sections.map((entry) => [entry.id, entry.parentId]);
+
+  it('keeps a child under its parent and re-emits it there', () => {
+    expect(layout(save([
+      { kind: 'custom', id: 'child', name: 'Child', parentId: 'parent' },
+      { kind: 'custom', id: 'parent', name: 'Parent', grouping: 'section' },
+      { kind: 'builtin', id: 'projects' },
+    ]))).toEqual([
+      ['parent', undefined],
+      ['child', 'parent'],
+      ['projects', undefined],
+    ]);
+    expect(save([{ kind: 'custom', id: 'group', name: 'Group', grouping: 'section' }])[0].grouping).toBe('section');
+  });
+
+  it('drops what it cannot place without losing the section', () => {
+    const sections = save([
+      { kind: 'custom', id: 'parent', name: 'Parent', grouping: 'section' },
+      { kind: 'custom', id: 'orphan', name: 'Orphan', parentId: 'gone' },
+      { kind: 'custom', id: 'badParent', name: 'Bad Parent', parentId: '' },
+      { kind: 'custom', id: 'child', name: 'Child', parentId: 'parent' },
+      { kind: 'custom', id: 'grandchild', name: 'Grandchild', parentId: 'child' },
+      { kind: 'custom', id: 'underProjects', name: 'Under Projects', parentId: 'projects' },
+      { kind: 'builtin', id: 'projects', parentId: 'parent' },
+    ]);
+    expect(layout(sections)).toEqual([
+      ['parent', undefined],
+      ['child', 'parent'],
+      ['orphan', undefined],
+      ['badParent', undefined],
+      ['grandchild', undefined],
+      ['underProjects', undefined],
+      ['projects', undefined],
+    ]);
+  });
+});
+
 describe('settings registry gate', () => {
   const registryPath = join(dirname(testFilePath), 'settings-registry.json');
   const registry = JSON.parse(readFileSync(registryPath, 'utf8'));

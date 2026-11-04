@@ -242,9 +242,9 @@ describe('buildSessionSidebarRowModel', () => {
     input.movedSessionIds = new Set(['waiting']);
     input.projectsCaption = true;
     input.blocks = [
-      { kind: 'custom', id: 's1', name: 'Waiting on me', entries: sessionWorks([timelineItem('waiting')]), hideWhenEmpty: true, preview: false },
-      { kind: 'work' },
-      { kind: 'projects' },
+      { kind: 'custom', id: 's1', name: 'Waiting on me', entries: sessionWorks([timelineItem('waiting')]), hideWhenEmpty: true, preview: false, depth: 0 },
+      { kind: 'work', depth: 0 },
+      { kind: 'projects', depth: 0 },
     ];
 
     const rows = buildSessionSidebarRowModel(input).rows;
@@ -260,10 +260,10 @@ describe('buildSessionSidebarRowModel', () => {
 
   test('an empty section of the user\'s own hides unless kept, and a kept one says it is empty', () => {
     const input = args([project([group([node('a')])])]);
-    input.blocks = [{ kind: 'custom', id: 's1', name: 'Today', entries: [], hideWhenEmpty: true, preview: false }, { kind: 'projects' }];
+    input.blocks = [{ kind: 'custom', id: 's1', name: 'Today', entries: [], hideWhenEmpty: true, preview: false, depth: 0 }, { kind: 'projects', depth: 0 }];
     expect(buildSessionSidebarRowModel(input).rows.some((row) => row.kind === 'activity-header')).toBe(false);
 
-    input.blocks = [{ kind: 'custom', id: 's1', name: 'Today', entries: [], hideWhenEmpty: false, preview: false }, { kind: 'projects' }];
+    input.blocks = [{ kind: 'custom', id: 's1', name: 'Today', entries: [], hideWhenEmpty: false, preview: false, depth: 0 }, { kind: 'projects', depth: 0 }];
     const rows = buildSessionSidebarRowModel(input).rows;
     expect(rows[0]).toMatchObject({ kind: 'activity-header', activityKey: 'section:s1' });
     expect(rows[1]).toMatchObject({ kind: 'empty', emptyKind: 'section' });
@@ -271,10 +271,10 @@ describe('buildSessionSidebarRowModel', () => {
 
   test('an empty group of projects shows its caption only when kept', () => {
     const input = args([project([group([node('a')])])]);
-    input.blocks = [{ kind: 'project-group', id: 'g1', name: 'Clients', projectIds: [], hideWhenEmpty: true, preview: false }];
+    input.blocks = [{ kind: 'project-group', id: 'g1', name: 'Clients', projectIds: [], hideWhenEmpty: true, preview: false, depth: 0 }];
     expect(buildSessionSidebarRowModel(input).rows.some((row) => row.kind === 'caption')).toBe(false);
 
-    input.blocks = [{ kind: 'project-group', id: 'g1', name: 'Clients', projectIds: [], hideWhenEmpty: false, preview: false }];
+    input.blocks = [{ kind: 'project-group', id: 'g1', name: 'Clients', projectIds: [], hideWhenEmpty: false, preview: false, depth: 0 }];
     const rows = buildSessionSidebarRowModel(input).rows;
     expect(rows[0]).toMatchObject({ kind: 'caption', caption: 'section:g1', label: 'Clients' });
     expect(rows[1]).toMatchObject({ kind: 'empty', emptyKind: 'section' });
@@ -285,8 +285,8 @@ describe('buildSessionSidebarRowModel', () => {
     const input = args([project([group([node('a')])]), projectB]);
     input.projectsCaption = true;
     input.blocks = [
-      { kind: 'project-group', id: 'g1', name: 'Clients', projectIds: ['project-b'], hideWhenEmpty: false, preview: false },
-      { kind: 'projects', excludedProjectIds: new Set(['project-b']) },
+      { kind: 'project-group', id: 'g1', name: 'Clients', projectIds: ['project-b'], hideWhenEmpty: false, preview: false, depth: 0 },
+      { kind: 'projects', excludedProjectIds: new Set(['project-b']), depth: 0 },
     ];
 
     const order = buildSessionSidebarRowModel(input).rows.flatMap((row) => (
@@ -1079,6 +1079,64 @@ describe('buildSessionSidebarRowModel', () => {
     input.authoritativeSections = [authoritative];
 
     expect(buildSessionSidebarRowModel(input).sessionById.get('hidden')?.id).toBe('hidden');
+  });
+
+  test('a child caption carries its depth and draws its own rows one step in', () => {
+    const input = args([]);
+    input.blocks = [
+      { kind: 'custom', id: 'parent', name: 'Parent', entries: [], hideWhenEmpty: false, preview: false, depth: 0 },
+      { kind: 'custom', id: 'child', name: 'Child', entries: sessionWorks([timelineItem('mine')]), hideWhenEmpty: true, preview: false, depth: 1 },
+    ];
+    const rows = buildSessionSidebarRowModel(input).rows;
+    const headers = rows.filter((row) => row.kind === 'activity-header');
+    expect(headers.map((row) => row.kind === 'activity-header' ? [row.label, row.depth] : null)).toEqual([[ 'Parent', 0 ], [ 'Child', 1 ]]);
+    const session = rows.find((row) => row.kind === 'session');
+    expect(session).toMatchObject({ depth: 1 });
+  });
+
+  test('a collapsed parent skips its children, and opening it brings back their own state', () => {
+    const input = args([]);
+    input.collapsedActivities = new Set(['section:parent']);
+    input.blocks = [
+      { kind: 'custom', id: 'parent', name: 'Parent', entries: [], hideWhenEmpty: false, preview: false, depth: 0 },
+      { kind: 'custom', id: 'child', name: 'Child', entries: sessionWorks([timelineItem('mine')]), hideWhenEmpty: true, preview: false, depth: 1 },
+    ];
+    expect(buildSessionSidebarRowModel(input).rows.map((row) => row.kind === 'activity-header' ? row.label : row.kind)).toEqual(['Parent']);
+
+    input.collapsedActivities = new Set();
+    expect(buildSessionSidebarRowModel(input).rows.map((row) => row.kind === 'activity-header' ? row.label : row.kind)).toEqual(['Parent', 'Child', 'session']);
+  });
+
+  test('a section drag folds every caption, so a collapsed parent still shows its children\'s captions', () => {
+    const input = args([]);
+    input.showChildSections = true;
+    input.collapsedActivities = new Set(['section:parent', 'section:child']);
+    input.blocks = [
+      { kind: 'custom', id: 'parent', name: 'Parent', entries: [], hideWhenEmpty: false, preview: false, depth: 0 },
+      { kind: 'custom', id: 'child', name: 'Child', entries: sessionWorks([timelineItem('mine')]), hideWhenEmpty: true, preview: false, depth: 1 },
+    ];
+    expect(buildSessionSidebarRowModel(input).rows.map((row) => row.kind === 'activity-header' ? row.label : row.kind)).toEqual(['Parent', 'Child']);
+  });
+
+  test('a parent with nothing of its own and a drawing child draws its caption without an empty row', () => {
+    const input = args([]);
+    input.blocks = [
+      { kind: 'custom', id: 'parent', name: 'Parent', entries: [], hideWhenEmpty: true, preview: false, depth: 0 },
+      { kind: 'custom', id: 'child', name: 'Child', entries: sessionWorks([timelineItem('mine')]), hideWhenEmpty: true, preview: false, depth: 1 },
+    ];
+    const rows = buildSessionSidebarRowModel(input).rows;
+    expect(rows.some((row) => row.kind === 'empty')).toBe(false);
+    expect(rows.map((row) => row.kind === 'activity-header' ? row.label : row.kind)).toEqual(['Parent', 'Child', 'session']);
+  });
+
+  test('a search draws no parent whose subtree has no match', () => {
+    const input = args([]);
+    input.mode = 'search';
+    input.blocks = [
+      { kind: 'custom', id: 'parent', name: 'Parent', entries: [], hideWhenEmpty: false, preview: false, depth: 0 },
+      { kind: 'custom', id: 'child', name: 'Child', entries: [], hideWhenEmpty: false, preview: false, depth: 1 },
+    ];
+    expect(buildSessionSidebarRowModel(input).rows.some((row) => row.kind === 'activity-header')).toBe(false);
   });
 });
 
